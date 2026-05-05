@@ -37,12 +37,14 @@ function formatFecha(dateStr: string) {
 }
 
 export default function DashboardTab({ active }: { active: boolean }) {
-  const [data, setData]       = useState<DashData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData]             = useState<DashData | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState('');
 
   const load = async (silent = false) => {
-    if (!silent) setLoading(true);
+    if (!silent) { setLoading(true); }
+    else         { setRefreshing(true); }
     try {
       const fechaLocal = format(new Date(), 'yyyy-MM-dd');
       const ts = Date.now();
@@ -51,6 +53,7 @@ export default function DashboardTab({ active }: { active: boolean }) {
       setLastUpdate(format(new Date(), 'HH:mm:ss'));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -98,8 +101,10 @@ export default function DashboardTab({ active }: { active: boolean }) {
           onClick={() => load()}
           className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-orange-500 transition-colors pt-1"
         >
-          <RefreshCw size={13} />
-          {lastUpdate && <span>Actualizado {lastUpdate}</span>}
+          <RefreshCw size={13} className={refreshing ? 'animate-spin text-orange-400' : ''} />
+          {refreshing
+            ? <span className="text-orange-400">Actualizando...</span>
+            : lastUpdate && <span>Actualizado {lastUpdate}</span>}
         </button>
       </div>
 

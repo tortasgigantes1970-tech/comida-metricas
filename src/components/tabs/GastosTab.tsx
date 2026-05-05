@@ -62,8 +62,8 @@ export default function GastosTab() {
         await fetch('/api/gastos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       setModal(false);
-      await load();
       window.dispatchEvent(new CustomEvent('datos-actualizados'));
+      await load();
     } finally {
       setSaving(false);
     }

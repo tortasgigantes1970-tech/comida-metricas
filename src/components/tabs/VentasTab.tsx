@@ -127,15 +127,16 @@ export default function VentasTab() {
         await fetch('/api/ventas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       setModal(false);
-      await load();
+      // Disparar en paralelo: dashboard empieza a refrescar al mismo tiempo que ventas
       window.dispatchEvent(new CustomEvent('datos-actualizados'));
+      await load();
     } finally { setSaving(false); }
   };
 
   const marcarCobrado = async (id: number) => {
     await fetch(`/api/ventas/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cobrado: true }) });
-    await load();
     window.dispatchEvent(new CustomEvent('datos-actualizados'));
+    await load();
   };
 
   const del = async (id: number) => {
