@@ -58,6 +58,13 @@ export default function VentasTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Refrescar cuando el cotizador registre una venta
+  useEffect(() => {
+    const handler = () => load();
+    window.addEventListener('datos-actualizados', handler);
+    return () => window.removeEventListener('datos-actualizados', handler);
+  }, [load]);
+
   // Cerrar sugerencias al hacer clic afuera
   useEffect(() => {
     const handler = (e: MouseEvent) => {
