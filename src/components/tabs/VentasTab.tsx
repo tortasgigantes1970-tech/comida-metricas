@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
-import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search } from 'lucide-react';
 import { format, endOfMonth } from 'date-fns';
 import Modal from '@/components/Modal';
 
@@ -29,8 +29,18 @@ export default function VentasTab() {
   const [fecha, setFecha]   = useState(hoyStr());
   const [notas, setNotas]   = useState('');
   const [items, setItems]   = useState<FormItem[]>([]);
-  const [prodSel, setProdSel] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Buscador de productos
+  const [busqueda, setBusqueda]       = useState('');
+  const [showSugg, setShowSugg]       = useState(false);
+  const busquedaRef                   = useRef<HTMLDivElement>(null);
+
+  const sugerencias = busqueda.trim().length === 0
+    ? productos
+    : productos.filter(p =>
+        p.nombre.toLowerCase().includes(busqueda.toLowerCase())
+      );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,26 +57,35 @@ export default function VentasTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Cerrar sugerencias al hacer clic afuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (busquedaRef.current && !busquedaRef.current.contains(e.target as Node)) {
+        setShowSugg(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const openModal = () => {
     setFecha(hoyStr());
     setNotas('');
     setItems([]);
-    setProdSel('');
+    setBusqueda('');
+    setShowSugg(false);
     setModal(true);
   };
 
-  const addItem = () => {
-    if (!prodSel) return;
-    const p = productos.find(x => x.id === Number(prodSel));
-    if (!p) return;
-    // Si ya existe, sumar cantidad
+  const addItem = (p: Producto) => {
     const idx = items.findIndex(i => i.producto_id === p.id);
     if (idx >= 0) {
       setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: it.cantidad + 1 } : it));
     } else {
       setItems(prev => [...prev, { producto_id: p.id, nombre_producto: p.nombre, cantidad: 1, precio_unitario: p.precio_venta, costo_unitario: p.costo_produccion }]);
     }
-    setProdSel('');
+    setBusqueda('');
+    setShowSugg(false);
   };
 
   const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
@@ -209,29 +228,41 @@ export default function VentasTab() {
               />
             </div>
 
-            {/* Selector de producto */}
+            {/* Buscador de producto */}
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">Agregar producto</label>
-              <div className="flex gap-2">
-                <select
-                  value={prodSel}
-                  onChange={e => setProdSel(e.target.value)}
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
-                >
-                  <option value="">Selecciona un producto...</option>
-                  {productos.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.nombre} — {$(p.precio_venta)}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={addItem}
-                  disabled={!prodSel}
-                  className="bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white px-4 rounded-xl text-sm font-medium transition-colors"
-                >
-                  <Plus size={16} />
-                </button>
+              <div className="relative" ref={busquedaRef}>
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={busqueda}
+                    onChange={e => { setBusqueda(e.target.value); setShowSugg(true); }}
+                    onFocus={() => setShowSugg(true)}
+                    placeholder="Buscar producto..."
+                    className="w-full border border-gray-200 rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
+                  />
+                </div>
+                {showSugg && sugerencias.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                    {sugerencias.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onMouseDown={() => addItem(p)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-orange-50 transition-colors text-left"
+                      >
+                        <span className="text-gray-800 font-medium truncate pr-2">{p.nombre}</span>
+                        <span className="text-orange-500 font-semibold shrink-0">{$(p.precio_venta)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showSugg && busqueda.trim().length > 0 && sugerencias.length === 0 && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-sm text-gray-400">
+                    Sin resultados para "{busqueda}"
+                  </div>
+                )}
               </div>
             </div>
 
