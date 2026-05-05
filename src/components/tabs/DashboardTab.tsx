@@ -5,7 +5,7 @@ import { es } from 'date-fns/locale';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, ShoppingBag, Minus } from 'lucide-react';
+import { ShoppingBag, RefreshCw } from 'lucide-react';
 
 interface DashData {
   hoy:    { ventas: number; costo: number; ganancia: number; margen: number };
@@ -37,22 +37,39 @@ function formatFecha(dateStr: string) {
 }
 
 export default function DashboardTab() {
-  const [data, setData] = useState<DashData | null>(null);
+  const [data, setData]       = useState<DashData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState('');
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      // Enviamos la fecha local del navegador para evitar problemas de zona horaria
       const fechaLocal = format(new Date(), 'yyyy-MM-dd');
-      const r = await fetch(`/api/dashboard?fecha=${fechaLocal}`);
+      // Timestamp para evitar caché de Netlify
+      const ts = Date.now();
+      const r = await fetch(`/api/dashboard?fecha=${fechaLocal}&t=${ts}`, { cache: 'no-store' });
       setData(await r.json());
+      setLastUpdate(format(new Date(), 'HH:mm:ss'));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+
+    // Refresh automático cada 30 segundos
+    const intervalo = setInterval(() => load(true), 30_000);
+
+    // Refresh cuando el usuario regresa a la pestaña del navegador
+    const onFocus = () => load(true);
+    document.addEventListener('visibilitychange', onFocus);
+
+    return () => {
+      clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, []);
 
   if (loading) return <div className="flex items-center justify-center h-60 text-gray-400">Cargando...</div>;
   if (!data)   return <div className="text-red-500">Error al cargar datos</div>;
@@ -63,9 +80,18 @@ export default function DashboardTab() {
   return (
     <div className="space-y-6 pb-6">
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-800 capitalize">{hoyStr}</h1>
-        <p className="text-sm text-gray-400">Resumen del negocio</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800 capitalize">{hoyStr}</h1>
+          <p className="text-sm text-gray-400">Resumen del negocio</p>
+        </div>
+        <button
+          onClick={() => load()}
+          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-orange-500 transition-colors pt-1"
+        >
+          <RefreshCw size={13} />
+          {lastUpdate && <span>Actualizado {lastUpdate}</span>}
+        </button>
       </div>
 
       {/* Hoy */}
