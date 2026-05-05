@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb, toRows } from '@/lib/db';
 import { format, startOfWeek, startOfMonth, subDays } from 'date-fns';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const db = await getDb();
