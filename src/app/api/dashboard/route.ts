@@ -122,10 +122,12 @@ export async function GET(req: NextRequest) {
         gastos_cat,
       },
       { headers: {
-          'Cache-Control':          'no-store, no-cache, must-revalidate, max-age=0',
+          'Cache-Control':             'no-store, no-cache, must-revalidate, max-age=0',
           'Netlify-CDN-Cache-Control': 'no-store',
-          'Surrogate-Control':      'no-store',
-          'Pragma':                 'no-cache',
+          'Vercel-CDN-Cache-Control':  'no-store',
+          'CDN-Cache-Control':         'no-store',
+          'Surrogate-Control':         'no-store',
+          'Pragma':                    'no-cache',
         }
       }
     );

@@ -149,7 +149,7 @@ export default function VentasTab() {
   const gananciaPeriodo = ventas.reduce((s, v) => s + v.ganancia, 0);
 
   // Fiados pendientes
-  const fiadosPendientes = ventas.filter(v => v.fiado && !v.cobrado);
+  const fiadosPendientes = ventas.filter(v => !!v.fiado && !v.cobrado);
   const totalFiado       = fiadosPendientes.reduce((s, v) => s + v.total, 0);
   const fiadosVencidos   = fiadosPendientes.filter(v => v.fecha_cobro && isPast(parseISO(v.fecha_cobro)));
 
@@ -218,26 +218,26 @@ export default function VentasTab() {
       ) : (
         <div className="space-y-2">
           {ventas.map(v => {
-            const esVencido = v.fiado && !v.cobrado && !!v.fecha_cobro && isPast(parseISO(v.fecha_cobro));
+            const esVencido = !!v.fiado && !v.cobrado && !!v.fecha_cobro && isPast(parseISO(v.fecha_cobro));
             return (
               <div key={v.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${esVencido ? 'border-red-300' : v.fiado && !v.cobrado ? 'border-amber-300' : 'border-gray-100'}`}>
                 <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(expanded === v.id ? null : v.id)}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium text-gray-800">{v.fecha}</p>
-                      {v.fiado && !v.cobrado && (
+                      {!!v.fiado && !v.cobrado && (
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${esVencido ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
                           {esVencido ? '⚠ Vencido' : '⏳ Por cobrar'}
                         </span>
                       )}
-                      {v.fiado && !!v.cobrado && (
+                      {!!v.fiado && !!v.cobrado && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-600">✓ Cobrado</span>
                       )}
                     </div>
                     <p className="text-xs text-gray-400">
                       {v.items.length} ítem{v.items.length !== 1 ? 's' : ''}
                       {v.cliente ? ` · ${v.cliente}` : ''}
-                      {v.fiado && v.fecha_cobro && !v.cobrado ? ` · Cobrar el ${formatFechaCobro(v.fecha_cobro)}` : ''}
+                      {!!v.fiado && v.fecha_cobro && !v.cobrado ? ` · Cobrar el ${formatFechaCobro(v.fecha_cobro)}` : ''}
                       {v.notas ? ` · ${v.notas}` : ''}
                     </p>
                   </div>
@@ -262,7 +262,7 @@ export default function VentasTab() {
                     </div>
 
                     {/* Fiado info + botón cobrar */}
-                    {v.fiado && !v.cobrado && (
+                    {!!v.fiado && !v.cobrado && (
                       <div className={`rounded-xl px-3 py-2.5 mt-1 flex items-center justify-between gap-3 ${esVencido ? 'bg-red-50' : 'bg-amber-50'}`}>
                         <div className="min-w-0">
                           <p className={`text-xs font-semibold ${esVencido ? 'text-red-700' : 'text-amber-700'}`}>
