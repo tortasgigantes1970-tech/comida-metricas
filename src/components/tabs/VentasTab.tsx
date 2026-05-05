@@ -10,7 +10,7 @@ interface VentaItem { nombre_producto: string; cantidad: number; precio_unitario
 interface Venta {
   id: number; fecha: string; total: number; total_costo: number; ganancia: number;
   notas: string; items: VentaItem[];
-  fiado: number; fecha_cobro: string | null; cobrado: number;
+  fiado: number; fecha_cobro: string | null; cobrado: number; cliente: string;
 }
 
 interface FormItem { producto_id: number | null; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number; }
@@ -40,8 +40,9 @@ export default function VentasTab() {
   const [notas, setNotas]       = useState('');
   const [items, setItems]       = useState<FormItem[]>([]);
   const [saving, setSaving]     = useState(false);
-  const [esFiado, setEsFiado]   = useState(false);
+  const [esFiado, setEsFiado]       = useState(false);
   const [fechaCobro, setFechaCobro] = useState('');
+  const [cliente, setCliente]       = useState('');
 
   // Buscador
   const [busqueda, setBusqueda]   = useState('');
@@ -84,13 +85,13 @@ export default function VentasTab() {
 
   const openModal = () => {
     setEditingId(null); setFecha(hoyStr()); setNotas(''); setItems([]);
-    setEsFiado(false); setFechaCobro('');
+    setEsFiado(false); setFechaCobro(''); setCliente('');
     setBusqueda(''); setShowSugg(false); setModal(true);
   };
 
   const openEdit = (v: Venta) => {
     setEditingId(v.id); setFecha(v.fecha); setNotas(v.notas ?? '');
-    setEsFiado(!!v.fiado); setFechaCobro(v.fecha_cobro ?? '');
+    setEsFiado(!!v.fiado); setFechaCobro(v.fecha_cobro ?? ''); setCliente(v.cliente ?? '');
     setItems(v.items.map(it => ({
       producto_id: null, nombre_producto: it.nombre_producto,
       cantidad: it.cantidad, precio_unitario: it.precio_unitario, costo_unitario: it.costo_unitario,
@@ -119,7 +120,7 @@ export default function VentasTab() {
     if (items.length === 0) return;
     setSaving(true);
     try {
-      const body = { fecha, items, notas, fiado: esFiado, fecha_cobro: esFiado ? fechaCobro : null };
+      const body = { fecha, items, notas, fiado: esFiado, fecha_cobro: esFiado ? fechaCobro : null, cliente };
       if (editingId !== null) {
         await fetch(`/api/ventas/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       } else {
@@ -234,6 +235,7 @@ export default function VentasTab() {
                     </div>
                     <p className="text-xs text-gray-400">
                       {v.items.length} ítem{v.items.length !== 1 ? 's' : ''}
+                      {v.cliente ? ` · ${v.cliente}` : ''}
                       {v.fiado && v.fecha_cobro && !v.cobrado ? ` · Cobrar el ${formatFechaCobro(v.fecha_cobro)}` : ''}
                       {v.notas ? ` · ${v.notas}` : ''}
                     </p>
@@ -264,6 +266,7 @@ export default function VentasTab() {
                         <div className="min-w-0">
                           <p className={`text-xs font-semibold ${esVencido ? 'text-red-700' : 'text-amber-700'}`}>
                             {esVencido ? '⚠ Pago vencido' : '⏳ Pendiente de cobro'}
+                            {v.cliente ? ` — ${v.cliente}` : ''}
                           </p>
                           {v.fecha_cobro && (
                             <p className={`text-xs ${esVencido ? 'text-red-500' : 'text-amber-500'}`}>
@@ -368,6 +371,16 @@ export default function VentasTab() {
                 </div>
               </div>
             )}
+
+            {/* Cliente */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Cliente (opcional)</label>
+              <input
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                value={cliente} onChange={e => setCliente(e.target.value)}
+                placeholder="Ej. Juan García"
+              />
+            </div>
 
             {/* Fiado toggle */}
             <div className={`rounded-xl border p-3 space-y-3 transition-colors ${esFiado ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>

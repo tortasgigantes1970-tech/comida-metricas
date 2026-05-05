@@ -5,7 +5,7 @@ import fs from 'fs';
 const TURSO_URL  = process.env.TURSO_URL;
 const TURSO_TOKEN = process.env.TURSO_TOKEN;
 const DB_PATH = path.join(process.cwd(), 'data', 'comida.db');
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -116,6 +116,7 @@ export async function getDb(): Promise<Client> {
     `ALTER TABLE ventas ADD COLUMN fiado       INTEGER DEFAULT 0`,
     `ALTER TABLE ventas ADD COLUMN fecha_cobro TEXT`,
     `ALTER TABLE ventas ADD COLUMN cobrado     INTEGER DEFAULT 0`,
+    `ALTER TABLE ventas ADD COLUMN cliente     TEXT    DEFAULT ''`,
   ];
   for (const sql of migraciones) {
     try { await client.execute({ sql, args: [] }); } catch { /* columna ya existe */ }

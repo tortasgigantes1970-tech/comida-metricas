@@ -58,11 +58,12 @@ export default function CotizadorTab() {
   const [guardado,    setGuardado]    = useState(false);
   const [modoFiado,   setModoFiado]   = useState(false);
   const [fechaCobro,  setFechaCobro]  = useState('');
+  const [cliente,     setCliente]     = useState('');
 
   const setCant = (idx: number, val: number) =>
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: Math.max(1, val) } : it));
   const remover = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
-  const limpiar = () => { setItems([]); setBusqueda(''); setShowSugg(false); setGuardado(false); setModoFiado(false); setFechaCobro(''); };
+  const limpiar = () => { setItems([]); setBusqueda(''); setShowSugg(false); setGuardado(false); setModoFiado(false); setFechaCobro(''); setCliente(''); };
 
   const registrarVenta = async (fiado = false) => {
     if (items.length === 0 || guardando) return;
@@ -74,6 +75,7 @@ export default function CotizadorTab() {
         notas: 'Desde cotizador',
         fiado,
         fecha_cobro: fiado ? (fechaCobro || null) : null,
+        cliente: cliente || '',
         items: items.map(it => ({
           producto_id:     it.producto.id,
           nombre_producto: it.producto.nombre,
@@ -225,10 +227,18 @@ export default function CotizadorTab() {
               </p>
             </label>
             {modoFiado && (
-              <div>
-                <label className="text-xs font-medium text-amber-700 block mb-1">Fecha acordada de cobro (opcional)</label>
-                <input type="date" value={fechaCobro} onChange={e => setFechaCobro(e.target.value)}
-                  className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs font-medium text-amber-700 block mb-1">Nombre del cliente</label>
+                  <input type="text" value={cliente} onChange={e => setCliente(e.target.value)}
+                    placeholder="Ej. Juan García"
+                    className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-amber-700 block mb-1">Fecha acordada de cobro (opcional)</label>
+                  <input type="date" value={fechaCobro} onChange={e => setFechaCobro(e.target.value)}
+                    className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                </div>
               </div>
             )}
           </div>

@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
     const db = await getDb();
 
-    let sql = `SELECT v.id, v.fecha, v.total, v.total_costo, v.notas, v.fiado, v.fecha_cobro, v.cobrado, v.created_at
+    let sql = `SELECT v.id, v.fecha, v.total, v.total_costo, v.notas, v.fiado, v.fecha_cobro, v.cobrado, v.cliente, v.created_at
                FROM ventas v`;
     const args: (string | number)[] = [];
 
@@ -62,11 +62,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fecha, items, notas, fiado, fecha_cobro } = body as {
+    const { fecha, items, notas, fiado, fecha_cobro, cliente } = body as {
       fecha: string;
       notas?: string;
       fiado?: boolean;
       fecha_cobro?: string;
+      cliente?: string;
       items: { producto_id?: number; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number }[];
     };
 
@@ -80,8 +81,8 @@ export async function POST(req: NextRequest) {
     const db = await getDb();
 
     const rVenta = await db.execute({
-      sql: `INSERT INTO ventas (fecha, total, total_costo, notas, fiado, fecha_cobro, cobrado) VALUES (?, ?, ?, ?, ?, ?, 0)`,
-      args: [fecha, total, total_costo, notas ?? '', fiado ? 1 : 0, fecha_cobro ?? null],
+      sql: `INSERT INTO ventas (fecha, total, total_costo, notas, fiado, fecha_cobro, cobrado, cliente) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+      args: [fecha, total, total_costo, notas ?? '', fiado ? 1 : 0, fecha_cobro ?? null, cliente ?? ''],
     });
     const ventaId = Number(rVenta.lastInsertRowid);
 

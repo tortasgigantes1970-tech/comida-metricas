@@ -26,12 +26,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   try {
     const id = Number(params.id);
     const body = await req.json();
-    const { fecha, items, notas, fiado, fecha_cobro, cobrado } = body as {
+    const { fecha, items, notas, fiado, fecha_cobro, cobrado, cliente } = body as {
       fecha: string;
       notas?: string;
       fiado?: boolean;
       fecha_cobro?: string;
       cobrado?: boolean;
+      cliente?: string;
       items: { producto_id?: number; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number }[];
     };
 
@@ -46,8 +47,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     // Actualizar la venta
     await db.execute({
-      sql: `UPDATE ventas SET fecha=?, total=?, total_costo=?, notas=?, fiado=?, fecha_cobro=?, cobrado=? WHERE id=?`,
-      args: [fecha, total, total_costo, notas ?? '', fiado ? 1 : 0, fecha_cobro ?? null, cobrado ? 1 : 0, id],
+      sql: `UPDATE ventas SET fecha=?, total=?, total_costo=?, notas=?, fiado=?, fecha_cobro=?, cobrado=?, cliente=? WHERE id=?`,
+      args: [fecha, total, total_costo, notas ?? '', fiado ? 1 : 0, fecha_cobro ?? null, cobrado ? 1 : 0, cliente ?? '', id],
     });
 
     // Borrar ítems anteriores e insertar los nuevos
