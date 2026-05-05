@@ -1,119 +1,130 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, toRows } from '@/lib/db';
+import { getDb } from '@/lib/db';
 import { format, startOfWeek, startOfMonth, subDays } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
+const n = (v: unknown) => Number(v ?? 0);
+
+const cal = (ventas: number, costo: number) => ({
+  ventas,
+  costo,
+  ganancia: ventas - costo,
+  margen: ventas > 0 ? Math.round(((ventas - costo) / ventas) * 100) : 0,
+});
+
 export async function GET(req: NextRequest) {
   try {
     const db = await getDb();
-    // Usamos la fecha local del cliente para evitar problemas de zona horaria
+
     const paramFecha = req.nextUrl.searchParams.get('fecha');
-    const ahora = paramFecha ? new Date(`${paramFecha}T12:00:00`) : new Date();
-    const hoy = paramFecha ?? format(ahora, 'yyyy-MM-dd');
-    const inicioSemana = format(startOfWeek(ahora, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-    const inicioMes = format(startOfMonth(ahora), 'yyyy-MM-dd');
-    const hace30 = format(subDays(ahora, 29), 'yyyy-MM-dd');
+    const ahora      = paramFecha ? new Date(`${paramFecha}T12:00:00`) : new Date();
+    const hoy        = paramFecha ?? format(ahora, 'yyyy-MM-dd');
+    const inicioSem  = format(startOfWeek(ahora, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    const inicioMes  = format(startOfMonth(ahora), 'yyyy-MM-dd');
+    const hace30     = format(subDays(ahora, 29), 'yyyy-MM-dd');
 
-    // Ventas por período
-    const [rHoy, rSemana, rMes] = await Promise.all([
-      db.execute({
-        sql: `SELECT COALESCE(SUM(total),0) as ventas, COALESCE(SUM(total_costo),0) as costo
-              FROM ventas WHERE fecha = ?`,
-        args: [hoy],
-      }),
-      db.execute({
-        sql: `SELECT COALESCE(SUM(total),0) as ventas, COALESCE(SUM(total_costo),0) as costo
-              FROM ventas WHERE fecha >= ?`,
-        args: [inicioSemana],
-      }),
-      db.execute({
-        sql: `SELECT COALESCE(SUM(total),0) as ventas, COALESCE(SUM(total_costo),0) as costo
-              FROM ventas WHERE fecha >= ?`,
-        args: [inicioMes],
-      }),
-    ]);
-
-    // Gastos del mes
-    const rGastosMes = await db.execute({
-      sql: `SELECT COALESCE(SUM(monto),0) as total FROM gastos WHERE fecha >= ?`,
-      args: [inicioMes],
+    // ── Ventas por período (secuencial para evitar problemas de concurrencia con Turso) ──
+    const qHoy = await db.execute({
+      sql:  'SELECT SUM(total), SUM(total_costo) FROM ventas WHERE fecha = ?',
+      args: [hoy],
+    });
+    const qSem = await db.execute({
+      sql:  'SELECT SUM(total), SUM(total_costo) FROM ventas WHERE fecha >= ?',
+      args: [inicioSem],
+    });
+    const qMes = await db.execute({
+      sql:  'SELECT SUM(total), SUM(total_costo) FROM ventas WHERE fecha >= ? AND fecha <= ?',
+      args: [inicioMes, hoy],
     });
 
-    // Tendencia últimos 30 días
-    const rTendencia = await db.execute({
-      sql: `SELECT fecha,
-                   COALESCE(SUM(total),0)       as ventas,
-                   COALESCE(SUM(total_costo),0) as costo
-            FROM ventas
-            WHERE fecha >= ?
-            GROUP BY fecha
-            ORDER BY fecha ASC`,
-      args: [hace30],
+    // ── Gastos del mes ──
+    const qGastos = await db.execute({
+      sql:  'SELECT SUM(monto) FROM gastos WHERE fecha >= ? AND fecha <= ?',
+      args: [inicioMes, hoy],
     });
 
-    // Top 5 productos del mes
-    const rTop = await db.execute({
+    // ── Tendencia 30 días ──
+    const qTend = await db.execute({
+      sql:  'SELECT fecha, SUM(total), SUM(total_costo) FROM ventas WHERE fecha >= ? AND fecha <= ? GROUP BY fecha ORDER BY fecha ASC',
+      args: [hace30, hoy],
+    });
+
+    // ── Top 5 productos del mes ──
+    const qTop = await db.execute({
       sql: `SELECT vi.nombre_producto,
-                   SUM(vi.cantidad)                             as unidades,
-                   SUM(vi.cantidad * vi.precio_unitario)        as revenue,
-                   SUM(vi.cantidad * vi.costo_unitario)         as costo
+                   SUM(vi.cantidad)                        AS unidades,
+                   SUM(vi.cantidad * vi.precio_unitario)   AS revenue,
+                   SUM(vi.cantidad * vi.costo_unitario)    AS costo
             FROM venta_items vi
             JOIN ventas v ON v.id = vi.venta_id
-            WHERE v.fecha >= ?
+            WHERE v.fecha >= ? AND v.fecha <= ?
             GROUP BY vi.nombre_producto
             ORDER BY revenue DESC
             LIMIT 5`,
-      args: [inicioMes],
+      args: [inicioMes, hoy],
     });
 
-    // Gastos del mes por categoría
-    const rGastosCat = await db.execute({
-      sql: `SELECT cg.nombre as categoria, COALESCE(SUM(g.monto),0) as total
+    // ── Gastos por categoría ──
+    const qGastoCat = await db.execute({
+      sql: `SELECT cg.nombre, SUM(g.monto)
             FROM gastos g
             JOIN categorias_gasto cg ON cg.id = g.categoria_id
-            WHERE g.fecha >= ?
+            WHERE g.fecha >= ? AND g.fecha <= ?
             GROUP BY cg.nombre
-            ORDER BY total DESC`,
-      args: [inicioMes],
+            ORDER BY SUM(g.monto) DESC`,
+      args: [inicioMes, hoy],
     });
 
-    const hoyData   = toRows(rHoy.rows, rHoy.columns as string[])[0] ?? { ventas: 0, costo: 0 };
-    const semData   = toRows(rSemana.rows, rSemana.columns as string[])[0] ?? { ventas: 0, costo: 0 };
-    const mesData   = toRows(rMes.rows, rMes.columns as string[])[0] ?? { ventas: 0, costo: 0 };
-    const gastosMes = Number(toRows(rGastosMes.rows, rGastosMes.columns as string[])[0]?.total ?? 0);
+    // ── Leer valores por índice (evita problemas con nombres de columna en Turso) ──
+    const hoyV   = n(qHoy.rows[0]?.[0]);
+    const hoyC   = n(qHoy.rows[0]?.[1]);
+    const semV   = n(qSem.rows[0]?.[0]);
+    const semC   = n(qSem.rows[0]?.[1]);
+    const mesV   = n(qMes.rows[0]?.[0]);
+    const mesC   = n(qMes.rows[0]?.[1]);
+    const gastosM = n(qGastos.rows[0]?.[0]);
 
-    const cal = (d: Record<string, unknown>) => ({
-      ventas:   Number(d.ventas ?? 0),
-      costo:    Number(d.costo  ?? 0),
-      ganancia: Number(d.ventas ?? 0) - Number(d.costo ?? 0),
-      margen:   Number(d.ventas ?? 0) > 0
-        ? Math.round(((Number(d.ventas ?? 0) - Number(d.costo ?? 0)) / Number(d.ventas ?? 0)) * 100)
-        : 0,
-    });
+    const mesCalc = cal(mesV, mesC);
 
-    const mesCalc = cal(mesData);
+    const tendencia = qTend.rows.map(r => ({
+      fecha:  String(r[0]),
+      ventas: n(r[1]),
+      costo:  n(r[2]),
+    }));
+
+    const top_productos = qTop.rows.map(r => ({
+      nombre_producto: String(r[0]),
+      unidades: n(r[1]),
+      revenue:  n(r[2]),
+      costo:    n(r[3]),
+    }));
+
+    const gastos_cat = qGastoCat.rows.map(r => ({
+      categoria: String(r[0]),
+      total:     n(r[1]),
+    }));
 
     return NextResponse.json(
       {
-        hoy:     cal(hoyData),
-        semana:  cal(semData),
+        hoy:    cal(hoyV, hoyC),
+        semana: cal(semV, semC),
         mes: {
           ...mesCalc,
-          gastos:         gastosMes,
-          ganancia_neta:  mesCalc.ganancia - gastosMes,
-          margen_neto:    mesCalc.ventas > 0
-            ? Math.round(((mesCalc.ganancia - gastosMes) / mesCalc.ventas) * 100)
+          gastos:        gastosM,
+          ganancia_neta: mesCalc.ganancia - gastosM,
+          margen_neto:   mesCalc.ventas > 0
+            ? Math.round(((mesCalc.ganancia - gastosM) / mesCalc.ventas) * 100)
             : 0,
         },
-        tendencia:    toRows(rTendencia.rows, rTendencia.columns as string[]),
-        top_productos: toRows(rTop.rows, rTop.columns as string[]),
-        gastos_cat:   toRows(rGastosCat.rows, rGastosCat.columns as string[]),
+        tendencia,
+        top_productos,
+        gastos_cat,
       },
       { headers: { 'Cache-Control': 'no-store, max-age=0' } }
     );
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+    console.error('[dashboard]', err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
