@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { Trash2, Calculator, Search } from 'lucide-react';
+import { Trash2, Calculator, Search, ShoppingCart, Check } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface Producto { id: number; nombre: string; precio_venta: number; costo_produccion: number; categoria: string; }
 interface Item { producto: Producto; cantidad: number; }
@@ -53,10 +54,43 @@ export default function CotizadorTab() {
     setShowSugg(false);
   };
 
-  const setCant   = (idx: number, val: number) =>
+  const [guardando, setGuardando] = useState(false);
+  const [guardado,  setGuardado]  = useState(false);
+
+  const setCant = (idx: number, val: number) =>
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: Math.max(1, val) } : it));
-  const remover   = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
-  const limpiar   = () => { setItems([]); setBusqueda(''); setShowSugg(false); };
+  const remover = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
+  const limpiar = () => { setItems([]); setBusqueda(''); setShowSugg(false); setGuardado(false); };
+
+  const registrarVenta = async () => {
+    if (items.length === 0 || guardando) return;
+    setGuardando(true);
+    try {
+      const fecha = format(new Date(), 'yyyy-MM-dd');
+      const payload = {
+        fecha,
+        notas: 'Desde cotizador',
+        items: items.map(it => ({
+          producto_id:    it.producto.id,
+          nombre_producto: it.producto.nombre,
+          cantidad:        it.cantidad,
+          precio_unitario: it.producto.precio_venta,
+          costo_unitario:  it.producto.costo_produccion,
+        })),
+      };
+      await fetch('/api/ventas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      window.dispatchEvent(new CustomEvent('datos-actualizados'));
+      setGuardado(true);
+      // Limpiar después de 2 segundos
+      setTimeout(limpiar, 2000);
+    } finally {
+      setGuardando(false);
+    }
+  };
 
   const total    = items.reduce((s, it) => s + it.cantidad * it.producto.precio_venta,    0);
   const costo    = items.reduce((s, it) => s + it.cantidad * it.producto.costo_produccion, 0);
@@ -180,13 +214,32 @@ export default function CotizadorTab() {
             </div>
           </div>
 
-          {/* Botón limpiar */}
-          <button
-            onClick={limpiar}
-            className="w-full py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors"
-          >
-            Limpiar cotización
-          </button>
+          {/* Botones */}
+          <div className="flex gap-3">
+            <button
+              onClick={limpiar}
+              className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors"
+            >
+              Limpiar
+            </button>
+            <button
+              onClick={registrarVenta}
+              disabled={guardando || guardado}
+              className={`flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+                guardado
+                  ? 'bg-emerald-500 text-white'
+                  : 'bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white'
+              }`}
+            >
+              {guardado ? (
+                <><Check size={16} /> ¡Venta registrada!</>
+              ) : guardando ? (
+                'Registrando...'
+              ) : (
+                <><ShoppingCart size={16} /> Registrar venta</>
+              )}
+            </button>
+          </div>
         </>
       )}
     </div>
