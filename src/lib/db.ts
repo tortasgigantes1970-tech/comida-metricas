@@ -2,6 +2,8 @@ import { createClient, Client, Row } from '@libsql/client';
 import path from 'path';
 import fs from 'fs';
 
+const TURSO_URL  = process.env.TURSO_URL;
+const TURSO_TOKEN = process.env.TURSO_TOKEN;
 const DB_PATH = path.join(process.cwd(), 'data', 'comida.db');
 const SCHEMA_VERSION = 1;
 
@@ -15,14 +17,24 @@ export async function getDb(): Promise<Client> {
     return global.__comida_db.client;
   }
 
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  let client: Client;
+  if (global.__comida_db?.client) {
+    client = global.__comida_db.client;
+  } else if (TURSO_URL && TURSO_TOKEN) {
+    // Producción: base de datos en la nube (Turso)
+    client = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
+  } else {
+    // Desarrollo local: archivo SQLite
+    const dir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    client = createClient({ url: `file:${DB_PATH}` });
+  }
 
-  const client: Client =
-    global.__comida_db?.client ?? createClient({ url: `file:${DB_PATH}` });
-
-  await client.execute({ sql: 'PRAGMA journal_mode = WAL', args: [] });
-  await client.execute({ sql: 'PRAGMA foreign_keys = ON', args: [] });
+  // WAL y foreign keys solo aplican en SQLite local
+  if (!TURSO_URL) {
+    await client.execute({ sql: 'PRAGMA journal_mode = WAL', args: [] });
+    await client.execute({ sql: 'PRAGMA foreign_keys = ON', args: [] });
+  }
 
   await client.batch([
     // Categorías de productos
