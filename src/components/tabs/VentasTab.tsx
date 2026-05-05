@@ -1,0 +1,313 @@
+'use client';
+import { useEffect, useState, useCallback } from 'react';
+import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart } from 'lucide-react';
+import { format, endOfMonth } from 'date-fns';
+import Modal from '@/components/Modal';
+
+interface Producto { id: number; nombre: string; precio_venta: number; costo_produccion: number; }
+interface VentaItem { nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number; }
+interface Venta { id: number; fecha: string; total: number; total_costo: number; ganancia: number; notas: string; items: VentaItem[]; }
+
+interface FormItem { producto_id: number | null; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number; }
+
+const $ = (n: number) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(n);
+
+const hoyStr = () => format(new Date(), 'yyyy-MM-dd');
+
+export default function VentasTab() {
+  const [ventas, setVentas]       = useState<Venta[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [modal, setModal]         = useState(false);
+  const [expanded, setExpanded]   = useState<number | null>(null);
+
+  // Filtro por mes
+  const [mes, setMes] = useState(format(new Date(), 'yyyy-MM'));
+
+  // Form nueva venta
+  const [fecha, setFecha]   = useState(hoyStr());
+  const [notas, setNotas]   = useState('');
+  const [items, setItems]   = useState<FormItem[]>([]);
+  const [prodSel, setProdSel] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const desde = `${mes}-01`;
+    const hasta = format(endOfMonth(new Date(`${mes}-01T12:00:00`)), 'yyyy-MM-dd');
+    const [rV, rP] = await Promise.all([
+      fetch(`/api/ventas?desde=${desde}&hasta=${hasta}`).then(r => r.json()),
+      fetch('/api/productos').then(r => r.json()),
+    ]);
+    setVentas(rV as Venta[]);
+    setProductos((rP as (Producto & { activo: number })[]).filter(p => p.activo));
+    setLoading(false);
+  }, [mes]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openModal = () => {
+    setFecha(hoyStr());
+    setNotas('');
+    setItems([]);
+    setProdSel('');
+    setModal(true);
+  };
+
+  const addItem = () => {
+    if (!prodSel) return;
+    const p = productos.find(x => x.id === Number(prodSel));
+    if (!p) return;
+    // Si ya existe, sumar cantidad
+    const idx = items.findIndex(i => i.producto_id === p.id);
+    if (idx >= 0) {
+      setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: it.cantidad + 1 } : it));
+    } else {
+      setItems(prev => [...prev, { producto_id: p.id, nombre_producto: p.nombre, cantidad: 1, precio_unitario: p.precio_venta, costo_unitario: p.costo_produccion }]);
+    }
+    setProdSel('');
+  };
+
+  const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
+  const setCant    = (idx: number, val: number) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: Math.max(1, val) } : it));
+  const setPrice   = (idx: number, val: number) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, precio_unitario: val } : it));
+
+  const totalForm = items.reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
+  const costoForm = items.reduce((s, i) => s + i.cantidad * i.costo_unitario,  0);
+
+  const save = async () => {
+    if (items.length === 0) return;
+    setSaving(true);
+    try {
+      await fetch('/api/ventas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha, items, notas }),
+      });
+      setModal(false);
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const del = async (id: number) => {
+    if (!confirm('¿Eliminar esta venta?')) return;
+    await fetch(`/api/ventas/${id}`, { method: 'DELETE' });
+    await load();
+  };
+
+  // Totales del período
+  const totalPeriodo   = ventas.reduce((s, v) => s + v.total, 0);
+  const gananciaPeriodo = ventas.reduce((s, v) => s + v.ganancia, 0);
+
+  if (loading) return <div className="flex items-center justify-center h-60 text-gray-400">Cargando...</div>;
+
+  return (
+    <div className="space-y-4 pb-24 md:pb-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">Ventas</h1>
+          <p className="text-sm text-gray-400">{ventas.length} registros</p>
+        </div>
+        <button
+          onClick={openModal}
+          className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+        >
+          <Plus size={16} /> Nueva venta
+        </button>
+      </div>
+
+      {/* Filtro mes */}
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-gray-500">Mes:</label>
+        <input
+          type="month"
+          value={mes}
+          onChange={e => setMes(e.target.value)}
+          className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+        />
+      </div>
+
+      {/* Resumen período */}
+      {ventas.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-orange-50 rounded-2xl p-3 text-center">
+            <p className="text-xs text-orange-400 font-medium">Ventas del período</p>
+            <p className="text-lg font-bold text-orange-600">{$(totalPeriodo)}</p>
+          </div>
+          <div className="bg-emerald-50 rounded-2xl p-3 text-center">
+            <p className="text-xs text-emerald-400 font-medium">Ganancia bruta</p>
+            <p className="text-lg font-bold text-emerald-600">{$(gananciaPeriodo)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Lista */}
+      {ventas.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <ShoppingCart size={40} className="mx-auto mb-3 opacity-30" />
+          <p className="font-medium">Sin ventas en este período</p>
+          <p className="text-sm">Registra tu primera venta</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {ventas.map(v => (
+            <div key={v.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div
+                className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+                onClick={() => setExpanded(expanded === v.id ? null : v.id)}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">{v.fecha}</p>
+                  <p className="text-xs text-gray-400">{v.items.length} ítem{v.items.length !== 1 ? 's' : ''}{v.notas ? ` · ${v.notas}` : ''}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-orange-500">{$(v.total)}</p>
+                  <p className="text-xs text-emerald-500">+{$(v.ganancia)}</p>
+                </div>
+                {expanded === v.id ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+              </div>
+
+              {expanded === v.id && (
+                <div className="border-t border-gray-50 px-4 py-3 space-y-1.5">
+                  {v.items.map((it, i) => (
+                    <div key={i} className="flex justify-between text-xs">
+                      <span className="text-gray-600">{it.nombre_producto} × {it.cantidad}</span>
+                      <span className="text-gray-700 font-medium">{$(it.cantidad * it.precio_unitario)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-gray-100 pt-2 mt-2 flex justify-between text-xs">
+                    <span className="text-gray-500">Costo total</span>
+                    <span className="text-gray-600">{$(v.total_costo)}</span>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <button onClick={() => del(v.id)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
+                      <Trash2 size={13} /> Eliminar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal nueva venta */}
+      {modal && (
+        <Modal title="Nueva venta" onClose={() => setModal(false)} maxWidth="max-w-xl">
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Fecha</label>
+              <input
+                type="date"
+                value={fecha}
+                onChange={e => setFecha(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+              />
+            </div>
+
+            {/* Selector de producto */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Agregar producto</label>
+              <div className="flex gap-2">
+                <select
+                  value={prodSel}
+                  onChange={e => setProdSel(e.target.value)}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
+                >
+                  <option value="">Selecciona un producto...</option>
+                  {productos.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre} — {$(p.precio_venta)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={addItem}
+                  disabled={!prodSel}
+                  className="bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white px-4 rounded-xl text-sm font-medium transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Ítems agregados */}
+            {items.length > 0 && (
+              <div className="bg-gray-50 rounded-xl overflow-hidden">
+                {items.map((it, i) => (
+                  <div key={i} className={`flex items-center gap-2 px-3 py-2.5 ${i < items.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{it.nombre_producto}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setCant(i, it.cantidad - 1)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-100 text-sm font-bold">−</button>
+                      <input
+                        type="number" min="1"
+                        value={it.cantidad}
+                        onChange={e => setCant(i, Number(e.target.value))}
+                        className="w-10 text-center border border-gray-200 rounded-lg py-1 text-sm"
+                      />
+                      <button onClick={() => setCant(i, it.cantidad + 1)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-100 text-sm font-bold">+</button>
+                    </div>
+                    <input
+                      type="number" min="0" step="0.5"
+                      value={it.precio_unitario}
+                      onChange={e => setPrice(i, Number(e.target.value))}
+                      className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right"
+                    />
+                    <button onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600 p-1">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Totales del form */}
+                <div className="px-3 py-2.5 border-t border-gray-200 bg-white space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total venta</span>
+                    <span className="font-bold text-orange-500">{$(totalForm)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Costo estimado</span>
+                    <span className="text-gray-500">{$(costoForm)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Ganancia estimada</span>
+                    <span className="text-emerald-500 font-medium">{$(totalForm - costoForm)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Notas (opcional)</label>
+              <input
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                value={notas}
+                onChange={e => setNotas(e.target.value)}
+                placeholder="Ej. Venta de la mañana"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setModal(false)} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button
+                onClick={save}
+                disabled={saving || items.length === 0}
+                className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
+              >
+                {saving ? 'Guardando...' : 'Registrar venta'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
