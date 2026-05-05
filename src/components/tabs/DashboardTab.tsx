@@ -110,7 +110,7 @@ export default function DashboardTab() {
               <LineChart data={tendencia} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                 <XAxis dataKey="fecha" tickFormatter={formatFecha} tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                <YAxis tickFormatter={v => `$${(v/1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: '#9ca3af' }} width={42} />
+                <YAxis tickFormatter={v => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} tick={{ fontSize: 11, fill: '#9ca3af' }} width={48} />
                 <Tooltip
                   formatter={(v: number) => $(v)}
                   labelFormatter={formatFecha}
