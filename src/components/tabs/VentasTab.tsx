@@ -132,6 +132,7 @@ export default function VentasTab() {
       }
       setModal(false);
       await load();
+      window.dispatchEvent(new CustomEvent('datos-actualizados'));
     } finally {
       setSaving(false);
     }

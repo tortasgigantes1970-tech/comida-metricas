@@ -13,7 +13,7 @@ export default function Home() {
   const [tab, setTab] = useState<TabId>('dashboard');
 
   const content = {
-    dashboard: <DashboardTab />,
+    dashboard: <DashboardTab active={tab === 'dashboard'} />,
     ventas:    <VentasTab    />,
     productos: <ProductosTab />,
     gastos:    <GastosTab    />,

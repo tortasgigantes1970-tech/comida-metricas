@@ -63,6 +63,7 @@ export default function GastosTab() {
       }
       setModal(false);
       await load();
+      window.dispatchEvent(new CustomEvent('datos-actualizados'));
     } finally {
       setSaving(false);
     }

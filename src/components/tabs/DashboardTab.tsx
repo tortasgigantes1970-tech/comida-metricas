@@ -36,7 +36,7 @@ function formatFecha(dateStr: string) {
   return `${d}/${m}`;
 }
 
-export default function DashboardTab() {
+export default function DashboardTab({ active }: { active: boolean }) {
   const [data, setData]       = useState<DashData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState('');
@@ -45,7 +45,6 @@ export default function DashboardTab() {
     if (!silent) setLoading(true);
     try {
       const fechaLocal = format(new Date(), 'yyyy-MM-dd');
-      // Timestamp para evitar caché de Netlify
       const ts = Date.now();
       const r = await fetch(`/api/dashboard?fecha=${fechaLocal}&t=${ts}`, { cache: 'no-store' });
       setData(await r.json());
@@ -55,19 +54,29 @@ export default function DashboardTab() {
     }
   };
 
+  // Refrescar al entrar al tab (cada vez que active pasa a true)
+  useEffect(() => {
+    if (active) load(true);
+  }, [active]);
+
   useEffect(() => {
     load();
 
-    // Refresh automático cada 30 segundos
-    const intervalo = setInterval(() => load(true), 30_000);
+    // Refresh automático cada 60 segundos (reducido ya que ahora refrescamos al entrar)
+    const intervalo = setInterval(() => load(true), 60_000);
 
     // Refresh cuando el usuario regresa a la pestaña del navegador
-    const onFocus = () => load(true);
+    const onFocus = () => { if (document.visibilityState === 'visible') load(true); };
     document.addEventListener('visibilitychange', onFocus);
+
+    // Escuchar ventas/gastos guardados desde otras tabs de la app
+    const onDatosActualizados = () => load(true);
+    window.addEventListener('datos-actualizados', onDatosActualizados);
 
     return () => {
       clearInterval(intervalo);
       document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('datos-actualizados', onDatosActualizados);
     };
   }, []);
 
