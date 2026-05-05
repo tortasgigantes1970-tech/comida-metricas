@@ -1,12 +1,13 @@
 'use client';
-import { LayoutDashboard, ShoppingCart, Package, Receipt } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, Receipt, Calculator } from 'lucide-react';
 import { TabId } from '@/app/page';
 
 const NAV = [
-  { id: 'dashboard' as TabId, label: 'Dashboard',  icon: LayoutDashboard },
-  { id: 'ventas'    as TabId, label: 'Ventas',      icon: ShoppingCart    },
-  { id: 'productos' as TabId, label: 'Productos',   icon: Package         },
-  { id: 'gastos'    as TabId, label: 'Gastos',      icon: Receipt         },
+  { id: 'dashboard'  as TabId, label: 'Dashboard',   icon: LayoutDashboard },
+  { id: 'ventas'     as TabId, label: 'Ventas',       icon: ShoppingCart    },
+  { id: 'productos'  as TabId, label: 'Productos',    icon: Package         },
+  { id: 'gastos'     as TabId, label: 'Gastos',       icon: Receipt         },
+  { id: 'cotizador'  as TabId, label: 'Cotizador',    icon: Calculator      },
 ];
 
 interface Props {

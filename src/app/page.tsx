@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
-import Sidebar from '@/components/Sidebar';
+import Sidebar      from '@/components/Sidebar';
 import DashboardTab from '@/components/tabs/DashboardTab';
 import VentasTab    from '@/components/tabs/VentasTab';
 import ProductosTab from '@/components/tabs/ProductosTab';
 import GastosTab    from '@/components/tabs/GastosTab';
+import CotizadorTab from '@/components/tabs/CotizadorTab';
 
-export type TabId = 'dashboard' | 'ventas' | 'productos' | 'gastos';
+export type TabId = 'dashboard' | 'ventas' | 'productos' | 'gastos' | 'cotizador';
 
 export default function Home() {
   const [tab, setTab] = useState<TabId>('dashboard');
@@ -16,6 +17,7 @@ export default function Home() {
     ventas:    <VentasTab    />,
     productos: <ProductosTab />,
     gastos:    <GastosTab    />,
+    cotizador: <CotizadorTab />,
   }[tab];
 
   return (
