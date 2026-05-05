@@ -1,16 +1,19 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDb, toRows } from '@/lib/db';
 import { format, startOfWeek, startOfMonth, subDays } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const db = await getDb();
-    const hoy = format(new Date(), 'yyyy-MM-dd');
-    const inicioSemana = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
-    const inicioMes = format(startOfMonth(new Date()), 'yyyy-MM-dd');
-    const hace30 = format(subDays(new Date(), 29), 'yyyy-MM-dd');
+    // Usamos la fecha local del cliente para evitar problemas de zona horaria
+    const paramFecha = req.nextUrl.searchParams.get('fecha');
+    const ahora = paramFecha ? new Date(`${paramFecha}T12:00:00`) : new Date();
+    const hoy = paramFecha ?? format(ahora, 'yyyy-MM-dd');
+    const inicioSemana = format(startOfWeek(ahora, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    const inicioMes = format(startOfMonth(ahora), 'yyyy-MM-dd');
+    const hace30 = format(subDays(ahora, 29), 'yyyy-MM-dd');
 
     // Ventas por período
     const [rHoy, rSemana, rMes] = await Promise.all([

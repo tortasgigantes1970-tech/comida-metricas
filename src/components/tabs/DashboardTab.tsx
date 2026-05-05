@@ -43,7 +43,9 @@ export default function DashboardTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/dashboard');
+      // Enviamos la fecha local del navegador para evitar problemas de zona horaria
+      const fechaLocal = format(new Date(), 'yyyy-MM-dd');
+      const r = await fetch(`/api/dashboard?fecha=${fechaLocal}`);
       setData(await r.json());
     } finally {
       setLoading(false);
