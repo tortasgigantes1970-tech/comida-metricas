@@ -1,9 +1,21 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Métricas — Negocio de Comida',
   description: 'Dashboard de ventas, costos y productos',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Métricas',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#f97316',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
