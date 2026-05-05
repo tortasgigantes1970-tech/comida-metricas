@@ -94,21 +94,24 @@ export async function GET(req: NextRequest) {
 
     const mesCalc = cal(mesData);
 
-    return NextResponse.json({
-      hoy:     cal(hoyData),
-      semana:  cal(semData),
-      mes: {
-        ...mesCalc,
-        gastos:         gastosMes,
-        ganancia_neta:  mesCalc.ganancia - gastosMes,
-        margen_neto:    mesCalc.ventas > 0
-          ? Math.round(((mesCalc.ganancia - gastosMes) / mesCalc.ventas) * 100)
-          : 0,
+    return NextResponse.json(
+      {
+        hoy:     cal(hoyData),
+        semana:  cal(semData),
+        mes: {
+          ...mesCalc,
+          gastos:         gastosMes,
+          ganancia_neta:  mesCalc.ganancia - gastosMes,
+          margen_neto:    mesCalc.ventas > 0
+            ? Math.round(((mesCalc.ganancia - gastosMes) / mesCalc.ventas) * 100)
+            : 0,
+        },
+        tendencia:    toRows(rTendencia.rows, rTendencia.columns as string[]),
+        top_productos: toRows(rTop.rows, rTop.columns as string[]),
+        gastos_cat:   toRows(rGastosCat.rows, rGastosCat.columns as string[]),
       },
-      tendencia:    toRows(rTendencia.rows, rTendencia.columns as string[]),
-      top_productos: toRows(rTop.rows, rTop.columns as string[]),
-      gastos_cat:   toRows(rGastosCat.rows, rGastosCat.columns as string[]),
-    });
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
