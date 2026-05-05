@@ -3,13 +3,35 @@ import { getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const id   = Number(params.id);
+    const body = await req.json() as { cobrado?: boolean; fiado?: boolean; fecha_cobro?: string };
+    const db   = await getDb();
+
+    if (body.cobrado !== undefined) {
+      await db.execute({
+        sql:  `UPDATE ventas SET cobrado=? WHERE id=?`,
+        args: [body.cobrado ? 1 : 0, id],
+      });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+  }
+}
+
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = Number(params.id);
     const body = await req.json();
-    const { fecha, items, notas } = body as {
+    const { fecha, items, notas, fiado, fecha_cobro, cobrado } = body as {
       fecha: string;
       notas?: string;
+      fiado?: boolean;
+      fecha_cobro?: string;
+      cobrado?: boolean;
       items: { producto_id?: number; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number }[];
     };
 
@@ -24,8 +46,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     // Actualizar la venta
     await db.execute({
-      sql: `UPDATE ventas SET fecha=?, total=?, total_costo=?, notas=? WHERE id=?`,
-      args: [fecha, total, total_costo, notas ?? '', id],
+      sql: `UPDATE ventas SET fecha=?, total=?, total_costo=?, notas=?, fiado=?, fecha_cobro=?, cobrado=? WHERE id=?`,
+      args: [fecha, total, total_costo, notas ?? '', fiado ? 1 : 0, fecha_cobro ?? null, cobrado ? 1 : 0, id],
     });
 
     // Borrar ítems anteriores e insertar los nuevos

@@ -5,7 +5,7 @@ import fs from 'fs';
 const TURSO_URL  = process.env.TURSO_URL;
 const TURSO_TOKEN = process.env.TURSO_TOKEN;
 const DB_PATH = path.join(process.cwd(), 'data', 'comida.db');
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -110,6 +110,16 @@ export async function getDb(): Promise<Client> {
     `CREATE INDEX IF NOT EXISTS idx_venta_items_venta ON venta_items(venta_id)`,
     `CREATE INDEX IF NOT EXISTS idx_gastos_fecha      ON gastos(fecha)`,
   ], 'write');
+
+  // ── Migraciones incrementales (columnas nuevas en tablas existentes) ──
+  const migraciones = [
+    `ALTER TABLE ventas ADD COLUMN fiado       INTEGER DEFAULT 0`,
+    `ALTER TABLE ventas ADD COLUMN fecha_cobro TEXT`,
+    `ALTER TABLE ventas ADD COLUMN cobrado     INTEGER DEFAULT 0`,
+  ];
+  for (const sql of migraciones) {
+    try { await client.execute({ sql, args: [] }); } catch { /* columna ya existe */ }
+  }
 
   global.__comida_db = { client, version: SCHEMA_VERSION };
   return client;

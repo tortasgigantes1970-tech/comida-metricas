@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { Trash2, Calculator, Search, ShoppingCart, Check } from 'lucide-react';
+import { Trash2, Calculator, Search, ShoppingCart, Check, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Producto { id: number; nombre: string; precio_venta: number; costo_produccion: number; categoria: string; }
@@ -54,15 +54,17 @@ export default function CotizadorTab() {
     setShowSugg(false);
   };
 
-  const [guardando, setGuardando] = useState(false);
-  const [guardado,  setGuardado]  = useState(false);
+  const [guardando,   setGuardando]   = useState(false);
+  const [guardado,    setGuardado]    = useState(false);
+  const [modoFiado,   setModoFiado]   = useState(false);
+  const [fechaCobro,  setFechaCobro]  = useState('');
 
   const setCant = (idx: number, val: number) =>
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: Math.max(1, val) } : it));
   const remover = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
-  const limpiar = () => { setItems([]); setBusqueda(''); setShowSugg(false); setGuardado(false); };
+  const limpiar = () => { setItems([]); setBusqueda(''); setShowSugg(false); setGuardado(false); setModoFiado(false); setFechaCobro(''); };
 
-  const registrarVenta = async () => {
+  const registrarVenta = async (fiado = false) => {
     if (items.length === 0 || guardando) return;
     setGuardando(true);
     try {
@@ -70,26 +72,21 @@ export default function CotizadorTab() {
       const payload = {
         fecha,
         notas: 'Desde cotizador',
+        fiado,
+        fecha_cobro: fiado ? (fechaCobro || null) : null,
         items: items.map(it => ({
-          producto_id:    it.producto.id,
+          producto_id:     it.producto.id,
           nombre_producto: it.producto.nombre,
           cantidad:        it.cantidad,
           precio_unitario: it.producto.precio_venta,
           costo_unitario:  it.producto.costo_produccion,
         })),
       };
-      await fetch('/api/ventas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      await fetch('/api/ventas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       window.dispatchEvent(new CustomEvent('datos-actualizados'));
       setGuardado(true);
-      // Limpiar después de 2 segundos
       setTimeout(limpiar, 2000);
-    } finally {
-      setGuardando(false);
-    }
+    } finally { setGuardando(false); }
   };
 
   const total    = items.reduce((s, it) => s + it.cantidad * it.producto.precio_venta,    0);
@@ -214,30 +211,46 @@ export default function CotizadorTab() {
             </div>
           </div>
 
+          {/* Fiado toggle */}
+          <div className={`rounded-xl border p-3 space-y-2 transition-colors ${modoFiado ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div className="relative">
+                <input type="checkbox" className="sr-only" checked={modoFiado} onChange={e => { setModoFiado(e.target.checked); if (!e.target.checked) setFechaCobro(''); }} />
+                <div className={`w-10 h-6 rounded-full transition-colors ${modoFiado ? 'bg-amber-400' : 'bg-gray-300'}`} />
+                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${modoFiado ? 'translate-x-4' : ''}`} />
+              </div>
+              <p className={`text-sm font-medium ${modoFiado ? 'text-amber-700' : 'text-gray-600'}`}>
+                <Clock size={13} className="inline mr-1" />
+                Registrar como fiado
+              </p>
+            </label>
+            {modoFiado && (
+              <div>
+                <label className="text-xs font-medium text-amber-700 block mb-1">Fecha acordada de cobro (opcional)</label>
+                <input type="date" value={fechaCobro} onChange={e => setFechaCobro(e.target.value)}
+                  className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
+              </div>
+            )}
+          </div>
+
           {/* Botones */}
           <div className="flex gap-3">
-            <button
-              onClick={limpiar}
-              className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors"
-            >
+            <button onClick={limpiar} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors">
               Limpiar
             </button>
             <button
-              onClick={registrarVenta}
+              onClick={() => registrarVenta(modoFiado)}
               disabled={guardando || guardado}
               className={`flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
-                guardado
-                  ? 'bg-emerald-500 text-white'
-                  : 'bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white'
+                guardado ? 'bg-emerald-500 text-white'
+                : modoFiado ? 'bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white'
+                : 'bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white'
               }`}
             >
-              {guardado ? (
-                <><Check size={16} /> ¡Venta registrada!</>
-              ) : guardando ? (
-                'Registrando...'
-              ) : (
-                <><ShoppingCart size={16} /> Registrar venta</>
-              )}
+              {guardado ? <><Check size={16} /> ¡Registrada!</>
+                : guardando ? 'Registrando...'
+                : modoFiado ? <><Clock size={16} /> Registrar fiado</>
+                : <><ShoppingCart size={16} /> Registrar venta</>}
             </button>
           </div>
         </>
