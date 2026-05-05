@@ -121,7 +121,13 @@ export async function GET(req: NextRequest) {
         top_productos,
         gastos_cat,
       },
-      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+      { headers: {
+          'Cache-Control':          'no-store, no-cache, must-revalidate, max-age=0',
+          'Netlify-CDN-Cache-Control': 'no-store',
+          'Surrogate-Control':      'no-store',
+          'Pragma':                 'no-cache',
+        }
+      }
     );
   } catch (err) {
     console.error('[dashboard]', err);

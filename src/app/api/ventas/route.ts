@@ -46,12 +46,18 @@ export async function GET(req: NextRequest) {
       itemsByVenta[vid].push(item);
     }
 
+    const noCache = {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Netlify-CDN-Cache-Control': 'no-store',
+      'Pragma': 'no-cache',
+    };
     return NextResponse.json(
       ventas.map(v => ({
         ...v,
         ganancia: Number(v.total) - Number(v.total_costo),
         items: itemsByVenta[v.id as number] ?? [],
-      }))
+      })),
+      { headers: noCache }
     );
   } catch (err) {
     console.error(err);
