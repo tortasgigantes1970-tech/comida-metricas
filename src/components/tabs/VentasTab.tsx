@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil } from 'lucide-react';
 import { format, endOfMonth } from 'date-fns';
 import Modal from '@/components/Modal';
 
@@ -20,6 +20,7 @@ export default function VentasTab() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading]     = useState(true);
   const [modal, setModal]         = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [expanded, setExpanded]   = useState<number | null>(null);
 
   // Filtro por mes
@@ -69,9 +70,26 @@ export default function VentasTab() {
   }, []);
 
   const openModal = () => {
+    setEditingId(null);
     setFecha(hoyStr());
     setNotas('');
     setItems([]);
+    setBusqueda('');
+    setShowSugg(false);
+    setModal(true);
+  };
+
+  const openEdit = (v: Venta) => {
+    setEditingId(v.id);
+    setFecha(v.fecha);
+    setNotas(v.notas ?? '');
+    setItems(v.items.map(it => ({
+      producto_id: null,
+      nombre_producto: it.nombre_producto,
+      cantidad: it.cantidad,
+      precio_unitario: it.precio_unitario,
+      costo_unitario: it.costo_unitario,
+    })));
     setBusqueda('');
     setShowSugg(false);
     setModal(true);
@@ -99,11 +117,19 @@ export default function VentasTab() {
     if (items.length === 0) return;
     setSaving(true);
     try {
-      await fetch('/api/ventas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fecha, items, notas }),
-      });
+      if (editingId !== null) {
+        await fetch(`/api/ventas/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fecha, items, notas }),
+        });
+      } else {
+        await fetch('/api/ventas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fecha, items, notas }),
+        });
+      }
       setModal(false);
       await load();
     } finally {
@@ -202,7 +228,10 @@ export default function VentasTab() {
                     <span className="text-gray-500">Costo total</span>
                     <span className="text-gray-600">{$(v.total_costo)}</span>
                   </div>
-                  <div className="flex justify-end pt-1">
+                  <div className="flex justify-between items-center pt-1">
+                    <button onClick={() => openEdit(v)} className="text-xs text-blue-400 hover:text-blue-600 flex items-center gap-1">
+                      <Pencil size={13} /> Editar
+                    </button>
                     <button onClick={() => del(v.id)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
                       <Trash2 size={13} /> Eliminar
                     </button>
@@ -216,7 +245,7 @@ export default function VentasTab() {
 
       {/* Modal nueva venta */}
       {modal && (
-        <Modal title="Nueva venta" onClose={() => setModal(false)} maxWidth="max-w-xl">
+        <Modal title={editingId !== null ? 'Editar venta' : 'Nueva venta'} onClose={() => setModal(false)} maxWidth="max-w-xl">
           <div className="space-y-4">
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">Fecha</label>
@@ -333,7 +362,7 @@ export default function VentasTab() {
                 disabled={saving || items.length === 0}
                 className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
               >
-                {saving ? 'Guardando...' : 'Registrar venta'}
+                {saving ? 'Guardando...' : editingId !== null ? 'Guardar cambios' : 'Registrar venta'}
               </button>
             </div>
           </div>
