@@ -88,9 +88,34 @@ export default function CotizadorTab() {
       await fetch('/api/ventas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       window.dispatchEvent(new CustomEvent('datos-actualizados'));
       setGuardado(true);
-      setTimeout(limpiar, 2000);
+      // No auto-limpiamos: el usuario decide cuándo empezar un nuevo pedido
     } finally { setGuardando(false); }
   };
+
+  const mensajeCotizacion = () => [
+    cliente ? `¡Hola ${cliente}! 👋` : '¡Hola! 👋',
+    '',
+    'Te comparto la cotización:',
+    '',
+    ...items.map(it => `• ${it.cantidad}× ${it.producto.nombre}  ${$(it.cantidad * it.producto.precio_venta)}`),
+    '',
+    `*Total: ${$(total)}*`,
+  ].join('\n');
+
+  const mensajeConfirmacion = () => [
+    cliente ? `¡Hola ${cliente}! 👋` : '¡Hola! 👋',
+    '',
+    'Tu pedido está confirmado ✅',
+    '',
+    ...items.map(it => `• ${it.cantidad}× ${it.producto.nombre}`),
+    '',
+    `*Total: ${$(total)}*`,
+    '',
+    'Te avisamos cuando esté listo 🍽️',
+  ].join('\n');
+
+  const abrirWA = (texto: string) =>
+    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
 
   const total    = items.reduce((s, it) => s + it.cantidad * it.producto.precio_venta,    0);
   const costo    = items.reduce((s, it) => s + it.cantidad * it.producto.costo_produccion, 0);
@@ -271,27 +296,70 @@ export default function CotizadorTab() {
           </div>
 
           {/* Botones */}
-          <div className="flex gap-3">
-            <button onClick={limpiar} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors">
-              Limpiar
-            </button>
-            <button
-              onClick={registrarVenta}
-              disabled={guardando || guardado}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
-                guardado          ? 'bg-emerald-500 text-white'
-                : tipoPago === 'cobrado'  ? 'bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white'
-                : tipoPago === 'fiado'    ? 'bg-amber-500  hover:bg-amber-600  disabled:opacity-60 text-white'
-                :                          'bg-orange-500  hover:bg-orange-600  disabled:opacity-60 text-white'
-              }`}
-            >
-              {guardado            ? <><Check   size={16} /> ¡Registrado!</>
-                : guardando        ? 'Registrando...'
-                : tipoPago === 'cobrado' ? <><Check   size={16} /> Registrar venta</>
-                : tipoPago === 'fiado'   ? <><Clock   size={16} /> Registrar fiado</>
-                :                         <><Package  size={16} /> Registrar pedido</>}
-            </button>
-          </div>
+          {guardado ? (
+            /* ── Estado post-registro ── */
+            <div className="space-y-3">
+              <div className={`rounded-2xl p-4 text-center border ${
+                tipoPago === 'cobrado' ? 'bg-emerald-50 border-emerald-200'
+                : tipoPago === 'fiado' ? 'bg-amber-50 border-amber-200'
+                : 'bg-orange-50 border-orange-200'
+              }`}>
+                <p className={`font-semibold text-sm ${
+                  tipoPago === 'cobrado' ? 'text-emerald-700'
+                  : tipoPago === 'fiado' ? 'text-amber-700'
+                  : 'text-orange-700'
+                }`}>
+                  <Check size={15} className="inline mr-1" />
+                  {tipoPago === 'entregar' ? '¡Pedido registrado!' : tipoPago === 'fiado' ? '¡Fiado registrado!' : '¡Venta registrada!'}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                {tipoPago === 'entregar' && (
+                  <button
+                    onClick={() => abrirWA(mensajeConfirmacion())}
+                    className="flex-1 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    📲 Confirmar por WhatsApp
+                  </button>
+                )}
+                <button
+                  onClick={limpiar}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors"
+                >
+                  + Nuevo pedido
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* ── Estado normal ── */
+            <div className="space-y-2">
+              <button
+                onClick={() => abrirWA(mensajeCotizacion())}
+                className="w-full py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 transition-colors"
+              >
+                🧾 Compartir cotización por WhatsApp
+              </button>
+              <div className="flex gap-3">
+                <button onClick={limpiar} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+                  Limpiar
+                </button>
+                <button
+                  onClick={registrarVenta}
+                  disabled={guardando}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+                    tipoPago === 'cobrado' ? 'bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white'
+                    : tipoPago === 'fiado' ? 'bg-amber-500  hover:bg-amber-600  disabled:opacity-60 text-white'
+                    :                        'bg-orange-500  hover:bg-orange-600  disabled:opacity-60 text-white'
+                  }`}
+                >
+                  {guardando          ? 'Registrando...'
+                    : tipoPago === 'cobrado' ? <><Check  size={16}/> Registrar venta</>
+                    : tipoPago === 'fiado'   ? <><Clock  size={16}/> Registrar fiado</>
+                    :                          <><Package size={16}/> Registrar pedido</>}
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

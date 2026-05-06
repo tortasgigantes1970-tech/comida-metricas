@@ -65,10 +65,11 @@ function mensajeAgradecimiento(v: { cliente: string }) {
 }
 
 export default function VentasTab() {
-  const [ventas, setVentas]       = useState<Venta[]>([]);
-  const [pedidos, setPedidos]     = useState<Venta[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [ventas, setVentas]           = useState<Venta[]>([]);
+  const [pedidos, setPedidos]         = useState<Venta[]>([]);
+  const [productos, setProductos]     = useState<Producto[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [ultimoCobrado, setUltimoCobrado] = useState<Venta | null>(null);
   const [modal, setModal]         = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expanded, setExpanded]   = useState<number | null>(null);
@@ -176,8 +177,11 @@ export default function VentasTab() {
   };
 
   const marcarCobrado = async (id: number) => {
+    // Capturar el pedido antes de que desaparezca de la lista
+    const pedido = pedidos.find(p => p.id === id) ?? ventas.find(v => v.id === id) ?? null;
     await fetch(`/api/ventas/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cobrado: true }) });
     window.dispatchEvent(new CustomEvent('datos-actualizados'));
+    if (pedido) setUltimoCobrado(pedido);
     await load();
   };
 
@@ -390,6 +394,27 @@ export default function VentasTab() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Toast: agradecimiento post-cobro */}
+      {ultimoCobrado && (
+        <div className="fixed bottom-24 left-4 right-4 md:left-auto md:right-6 md:w-80 bg-emerald-600 text-white rounded-2xl p-4 shadow-xl z-50 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm">✅ ¡Cobrado!</p>
+            {ultimoCobrado.cliente && (
+              <p className="text-xs text-emerald-200 truncate">{ultimoCobrado.cliente}</p>
+            )}
+          </div>
+          <button
+            onClick={() => { abrirWhatsApp(mensajeAgradecimiento(ultimoCobrado)); setUltimoCobrado(null); }}
+            className="shrink-0 bg-white text-emerald-700 font-semibold text-xs px-3 py-2 rounded-xl hover:bg-emerald-50 transition-colors"
+          >
+            📲 Agradecer
+          </button>
+          <button onClick={() => setUltimoCobrado(null)} className="shrink-0 text-emerald-200 hover:text-white text-lg leading-none">
+            ×
+          </button>
         </div>
       )}
 
