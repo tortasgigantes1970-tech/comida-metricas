@@ -34,6 +34,36 @@ function formatHora(createdAt: string) {
   } catch { return ''; }
 }
 
+const $_plain = (n: number) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(n);
+
+function abrirWhatsApp(texto: string) {
+  window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
+}
+
+function mensajeConfirmacion(v: { cliente: string; items: VentaItem[]; total: number }) {
+  const items = v.items.map(it => `• ${it.cantidad}× ${it.nombre_producto}`).join('\n');
+  return [
+    `¡Hola${v.cliente ? ` ${v.cliente}` : ''}! 👋`,
+    '',
+    'Tu pedido está confirmado ✅',
+    '',
+    items,
+    '',
+    `*Total: ${$_plain(v.total)}*`,
+    '',
+    'Te avisamos cuando esté listo 🍽️',
+  ].join('\n');
+}
+
+function mensajeAgradecimiento(v: { cliente: string }) {
+  return [
+    `¡Gracias por tu compra${v.cliente ? `, ${v.cliente}` : ''}! 🙌`,
+    '',
+    'Esperamos verte pronto 😊',
+  ].join('\n');
+}
+
 export default function VentasTab() {
   const [ventas, setVentas]       = useState<Venta[]>([]);
   const [pedidos, setPedidos]     = useState<Venta[]>([]);
@@ -213,6 +243,12 @@ export default function VentasTab() {
                   >
                     <CheckCircle2 size={11} /> Cobrado
                   </button>
+                  <button
+                    onClick={() => abrirWhatsApp(mensajeConfirmacion(p))}
+                    className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    📲 Confirmar
+                  </button>
                 </div>
               </div>
             ))}
@@ -337,9 +373,14 @@ export default function VentasTab() {
                     )}
 
                     <div className="flex justify-between items-center pt-1">
-                      <button onClick={() => openEdit(v)} className="text-xs text-blue-400 hover:text-blue-600 flex items-center gap-1">
-                        <Pencil size={13} /> Editar
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => openEdit(v)} className="text-xs text-blue-400 hover:text-blue-600 flex items-center gap-1">
+                          <Pencil size={13} /> Editar
+                        </button>
+                        <button onClick={() => abrirWhatsApp(mensajeAgradecimiento(v))} className="text-xs text-green-500 hover:text-green-600 flex items-center gap-1">
+                          📲 Agradecer
+                        </button>
+                      </div>
                       <button onClick={() => del(v.id)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
                         <Trash2 size={13} /> Eliminar
                       </button>
