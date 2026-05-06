@@ -58,9 +58,9 @@ function mensajeConfirmacion(v: { cliente: string; items: VentaItem[]; total: nu
 
 function mensajeAgradecimiento(v: { cliente: string }) {
   return [
-    `¡Gracias por tu compra${v.cliente ? `, ${v.cliente}` : ''}! 🙌`,
+    v.cliente ? `Gracias por tu compra, ${v.cliente}!` : 'Gracias por tu compra!',
     '',
-    'Esperamos verte pronto 😊',
+    'Esperamos verte pronto.',
   ].join('\n');
 }
 

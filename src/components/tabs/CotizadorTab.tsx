@@ -93,25 +93,25 @@ export default function CotizadorTab() {
   };
 
   const mensajeCotizacion = () => [
-    cliente ? `¡Hola ${cliente}! 👋` : '¡Hola! 👋',
+    cliente ? `Hola ${cliente}!` : 'Hola!',
     '',
-    'Te comparto la cotización:',
+    'Te comparto la cotizacion:',
     '',
-    ...items.map(it => `• ${it.cantidad}× ${it.producto.nombre}  ${$(it.cantidad * it.producto.precio_venta)}`),
+    ...items.map(it => `- ${it.cantidad}x ${it.producto.nombre}  ${$(it.cantidad * it.producto.precio_venta)}`),
     '',
-    `*Total: ${$(total)}*`,
+    `Total: ${$(total)}`,
   ].join('\n');
 
   const mensajeConfirmacion = () => [
-    cliente ? `¡Hola ${cliente}! 👋` : '¡Hola! 👋',
+    cliente ? `Hola ${cliente}!` : 'Hola!',
     '',
-    'Tu pedido está confirmado ✅',
+    'Tu pedido esta confirmado.',
     '',
-    ...items.map(it => `• ${it.cantidad}× ${it.producto.nombre}`),
+    ...items.map(it => `- ${it.cantidad}x ${it.producto.nombre}`),
     '',
-    `*Total: ${$(total)}*`,
+    `Total: ${$(total)}`,
     '',
-    'Te avisamos cuando esté listo 🍽️',
+    'Te avisamos cuando este listo.',
   ].join('\n');
 
   const abrirWA = (texto: string) =>
