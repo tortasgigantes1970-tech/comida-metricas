@@ -247,12 +247,6 @@ export default function VentasTab() {
                   >
                     <CheckCircle2 size={11} /> Cobrado
                   </button>
-                  <button
-                    onClick={() => abrirWhatsApp(mensajeConfirmacion(p))}
-                    className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    📲 Confirmar
-                  </button>
                 </div>
               </div>
             ))}
@@ -377,14 +371,9 @@ export default function VentasTab() {
                     )}
 
                     <div className="flex justify-between items-center pt-1">
-                      <div className="flex items-center gap-3">
-                        <button onClick={() => openEdit(v)} className="text-xs text-blue-400 hover:text-blue-600 flex items-center gap-1">
-                          <Pencil size={13} /> Editar
-                        </button>
-                        <button onClick={() => abrirWhatsApp(mensajeAgradecimiento(v))} className="text-xs text-green-500 hover:text-green-600 flex items-center gap-1">
-                          📲 Agradecer
-                        </button>
-                      </div>
+                      <button onClick={() => openEdit(v)} className="text-xs text-blue-400 hover:text-blue-600 flex items-center gap-1">
+                        <Pencil size={13} /> Editar
+                      </button>
                       <button onClick={() => del(v.id)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
                         <Trash2 size={13} /> Eliminar
                       </button>
