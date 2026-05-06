@@ -26,19 +26,24 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   try {
     const id = Number(params.id);
     const body = await req.json();
-    const { fecha, items, notas, fiado, fecha_cobro, cobrado, cliente } = body as {
+    const { fecha, items, notas, fiado, fecha_cobro, cobrado, cliente, tipo_pago } = body as {
       fecha: string;
       notas?: string;
       fiado?: boolean;
       fecha_cobro?: string;
       cobrado?: boolean;
       cliente?: string;
+      tipo_pago?: 'cobrado' | 'entregar' | 'fiado';
       items: { producto_id?: number; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number }[];
     };
 
     if (!fecha || !items || items.length === 0) {
       return NextResponse.json({ error: 'Faltan campos obligatorios' }, { status: 400 });
     }
+
+    const tipoPagoFinal = tipo_pago ?? (fiado ? 'fiado' : 'cobrado');
+    const esFiado   = tipoPagoFinal === 'fiado'   ? 1 : 0;
+    const esCobrado = cobrado !== undefined ? (cobrado ? 1 : 0) : (tipoPagoFinal === 'cobrado' ? 1 : 0);
 
     const total       = items.reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
     const total_costo = items.reduce((s, i) => s + i.cantidad * i.costo_unitario,  0);
@@ -47,8 +52,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     // Actualizar la venta
     await db.execute({
-      sql: `UPDATE ventas SET fecha=?, total=?, total_costo=?, notas=?, fiado=?, fecha_cobro=?, cobrado=?, cliente=? WHERE id=?`,
-      args: [fecha, total, total_costo, notas ?? '', fiado ? 1 : 0, fecha_cobro ?? null, cobrado ? 1 : 0, cliente ?? '', id],
+      sql: `UPDATE ventas SET fecha=?, total=?, total_costo=?, notas=?, fiado=?, fecha_cobro=?, cobrado=?, cliente=?, tipo_pago=? WHERE id=?`,
+      args: [fecha, total, total_costo, notas ?? '', esFiado, fecha_cobro ?? null, esCobrado, cliente ?? '', tipoPagoFinal, id],
     });
 
     // Borrar ítems anteriores e insertar los nuevos

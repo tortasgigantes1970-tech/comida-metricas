@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock, Package } from 'lucide-react';
 import { format, endOfMonth, isPast, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import Modal from '@/components/Modal';
@@ -11,6 +11,7 @@ interface Venta {
   id: number; fecha: string; total: number; total_costo: number; ganancia: number;
   notas: string; items: VentaItem[];
   fiado: number; fecha_cobro: string | null; cobrado: number; cliente: string;
+  tipo_pago: string; created_at: string;
 }
 
 interface FormItem { producto_id: number | null; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number; }
@@ -25,8 +26,17 @@ function formatFechaCobro(fecha: string) {
   catch { return fecha; }
 }
 
+function formatHora(createdAt: string) {
+  try {
+    // created_at viene como "2025-05-06 14:30:00" (UTC de la BD)
+    const iso = createdAt.replace(' ', 'T') + 'Z';
+    return format(parseISO(iso), 'h:mm a');
+  } catch { return ''; }
+}
+
 export default function VentasTab() {
   const [ventas, setVentas]       = useState<Venta[]>([]);
+  const [pedidos, setPedidos]     = useState<Venta[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading]     = useState(true);
   const [modal, setModal]         = useState(false);
@@ -57,12 +67,14 @@ export default function VentasTab() {
     setLoading(true);
     const desde = `${mes}-01`;
     const hasta = format(endOfMonth(new Date(`${mes}-01T12:00:00`)), 'yyyy-MM-dd');
-    const [rV, rP] = await Promise.all([
+    const [rV, rP, rPedidos] = await Promise.all([
       fetch(`/api/ventas?desde=${desde}&hasta=${hasta}`).then(r => r.json()),
       fetch('/api/productos').then(r => r.json()),
+      fetch('/api/ventas?pendientes=1').then(r => r.json()),
     ]);
     setVentas(rV as Venta[]);
     setProductos((rP as (Producto & { activo: number })[]).filter(p => p.activo));
+    setPedidos(rPedidos as Venta[]);
     setLoading(false);
   }, [mes]);
 
@@ -120,7 +132,7 @@ export default function VentasTab() {
     if (items.length === 0) return;
     setSaving(true);
     try {
-      const body = { fecha, items, notas, fiado: esFiado, fecha_cobro: esFiado ? fechaCobro : null, cliente };
+      const body = { fecha, items, notas, fiado: esFiado, fecha_cobro: esFiado ? fechaCobro : null, cliente, tipo_pago: esFiado ? 'fiado' : 'cobrado' };
       if (editingId !== null) {
         await fetch(`/api/ventas/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       } else {
@@ -145,13 +157,16 @@ export default function VentasTab() {
     await load();
   };
 
-  const totalPeriodo    = ventas.reduce((s, v) => s + v.total, 0);
-  const gananciaPeriodo = ventas.reduce((s, v) => s + v.ganancia, 0);
-
   // Fiados pendientes
   const fiadosPendientes = ventas.filter(v => !!v.fiado && !v.cobrado);
   const totalFiado       = fiadosPendientes.reduce((s, v) => s + v.total, 0);
   const fiadosVencidos   = fiadosPendientes.filter(v => v.fecha_cobro && isPast(parseISO(v.fecha_cobro)));
+
+  // Ventas que se muestran en la lista del período (excluye pedidos pendientes de entrega)
+  const ventasMostrar = ventas.filter(v => !(v.tipo_pago === 'entregar' && !v.cobrado));
+
+  const totalPeriodo    = ventasMostrar.reduce((s, v) => s + v.total, 0);
+  const gananciaPeriodo = ventasMostrar.reduce((s, v) => s + v.ganancia, 0);
 
   if (loading) return <div className="flex items-center justify-center h-60 text-gray-400">Cargando...</div>;
 
@@ -161,12 +176,49 @@ export default function VentasTab() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">Ventas</h1>
-          <p className="text-sm text-gray-400">{ventas.length} registros</p>
+          <p className="text-sm text-gray-400">{ventasMostrar.length} registros</p>
         </div>
         <button onClick={openModal} className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors">
           <Plus size={16} /> Nueva venta
         </button>
       </div>
+
+      {/* Pedidos activos */}
+      {pedidos.length > 0 && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-orange-100">
+            <Package size={15} className="text-orange-500 shrink-0" />
+            <p className="text-sm font-semibold text-orange-700 flex-1">Pedidos activos</p>
+            <span className="bg-orange-500 text-white text-xs font-bold rounded-full px-2 py-0.5">{pedidos.length}</span>
+          </div>
+          <div className="divide-y divide-orange-100">
+            {pedidos.map(p => (
+              <div key={p.id} className="px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {p.cliente
+                      ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
+                      : <span className="text-sm text-gray-400 italic">Sin nombre</span>}
+                    <span className="text-xs text-gray-400">{formatHora(p.created_at)}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 truncate mt-0.5">
+                    {p.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                  </p>
+                </div>
+                <div className="flex flex-col items-end shrink-0 gap-1">
+                  <p className="text-sm font-bold text-orange-500">{$(p.total)}</p>
+                  <button
+                    onClick={() => marcarCobrado(p.id)}
+                    className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <CheckCircle2 size={11} /> Cobrado
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Alerta fiados pendientes */}
       {fiadosPendientes.length > 0 && (
@@ -195,7 +247,7 @@ export default function VentasTab() {
       </div>
 
       {/* Resumen período */}
-      {ventas.length > 0 && (
+      {ventasMostrar.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-orange-50 rounded-2xl p-3 text-center">
             <p className="text-xs text-orange-400 font-medium">Ventas del período</p>
@@ -209,7 +261,7 @@ export default function VentasTab() {
       )}
 
       {/* Lista */}
-      {ventas.length === 0 ? (
+      {ventasMostrar.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <ShoppingCart size={40} className="mx-auto mb-3 opacity-30" />
           <p className="font-medium">Sin ventas en este período</p>
@@ -217,7 +269,7 @@ export default function VentasTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {ventas.map(v => {
+          {ventasMostrar.map(v => {
             const esVencido = !!v.fiado && !v.cobrado && !!v.fecha_cobro && isPast(parseISO(v.fecha_cobro));
             return (
               <div key={v.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${esVencido ? 'border-red-300' : v.fiado && !v.cobrado ? 'border-amber-300' : 'border-gray-100'}`}>

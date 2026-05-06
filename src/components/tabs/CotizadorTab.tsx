@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { Trash2, Calculator, Search, ShoppingCart, Check, Clock } from 'lucide-react';
+import { Trash2, Calculator, Search, Package, Check, Clock } from 'lucide-react';
+type TipoPago = 'cobrado' | 'entregar' | 'fiado';
 import { format } from 'date-fns';
 
 interface Producto { id: number; nombre: string; precio_venta: number; costo_produccion: number; categoria: string; }
@@ -54,18 +55,18 @@ export default function CotizadorTab() {
     setShowSugg(false);
   };
 
-  const [guardando,   setGuardando]   = useState(false);
-  const [guardado,    setGuardado]    = useState(false);
-  const [modoFiado,   setModoFiado]   = useState(false);
-  const [fechaCobro,  setFechaCobro]  = useState('');
-  const [cliente,     setCliente]     = useState('');
+  const [guardando,  setGuardando]  = useState(false);
+  const [guardado,   setGuardado]   = useState(false);
+  const [tipoPago,   setTipoPago]   = useState<TipoPago>('entregar');
+  const [fechaCobro, setFechaCobro] = useState('');
+  const [cliente,    setCliente]    = useState('');
 
   const setCant = (idx: number, val: number) =>
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: Math.max(1, val) } : it));
   const remover = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
-  const limpiar = () => { setItems([]); setBusqueda(''); setShowSugg(false); setGuardado(false); setModoFiado(false); setFechaCobro(''); setCliente(''); };
+  const limpiar = () => { setItems([]); setBusqueda(''); setShowSugg(false); setGuardado(false); setTipoPago('entregar'); setFechaCobro(''); setCliente(''); };
 
-  const registrarVenta = async (fiado = false) => {
+  const registrarVenta = async () => {
     if (items.length === 0 || guardando) return;
     setGuardando(true);
     try {
@@ -73,8 +74,8 @@ export default function CotizadorTab() {
       const payload = {
         fecha,
         notas: 'Desde cotizador',
-        fiado,
-        fecha_cobro: fiado ? (fechaCobro || null) : null,
+        tipo_pago: tipoPago,
+        fecha_cobro: tipoPago === 'fiado' ? (fechaCobro || null) : null,
         cliente: cliente || '',
         items: items.map(it => ({
           producto_id:     it.producto.id,
@@ -213,32 +214,58 @@ export default function CotizadorTab() {
             </div>
           </div>
 
-          {/* Fiado toggle */}
-          <div className={`rounded-xl border p-3 space-y-2 transition-colors ${modoFiado ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-            <label className="flex items-center gap-3 cursor-pointer select-none">
-              <div className="relative">
-                <input type="checkbox" className="sr-only" checked={modoFiado} onChange={e => { setModoFiado(e.target.checked); if (!e.target.checked) setFechaCobro(''); }} />
-                <div className={`w-10 h-6 rounded-full transition-colors ${modoFiado ? 'bg-amber-400' : 'bg-gray-300'}`} />
-                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${modoFiado ? 'translate-x-4' : ''}`} />
-              </div>
-              <p className={`text-sm font-medium ${modoFiado ? 'text-amber-700' : 'text-gray-600'}`}>
-                <Clock size={13} className="inline mr-1" />
-                Registrar como fiado
-              </p>
-            </label>
-            {modoFiado && (
-              <div className="space-y-2">
-                <div>
-                  <label className="text-xs font-medium text-amber-700 block mb-1">Nombre del cliente</label>
-                  <input type="text" value={cliente} onChange={e => setCliente(e.target.value)}
-                    placeholder="Ej. Juan García"
-                    className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-amber-700 block mb-1">Fecha acordada de cobro (opcional)</label>
-                  <input type="date" value={fechaCobro} onChange={e => setFechaCobro(e.target.value)}
-                    className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
-                </div>
+          {/* Cliente (siempre visible) */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Cliente (opcional)</label>
+            <input type="text" value={cliente} onChange={e => setCliente(e.target.value)}
+              placeholder="Ej. Juan García"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-300" />
+          </div>
+
+          {/* Selector de forma de pago */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 space-y-3">
+            <p className="text-xs font-medium text-gray-500">Forma de pago</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                onClick={() => setTipoPago('entregar')}
+                className={`py-2.5 px-1 rounded-xl text-xs font-semibold text-center transition-colors ${
+                  tipoPago === 'entregar'
+                    ? 'bg-orange-500 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                📦 Al entregar
+              </button>
+              <button
+                onClick={() => { setTipoPago('cobrado'); setFechaCobro(''); }}
+                className={`py-2.5 px-1 rounded-xl text-xs font-semibold text-center transition-colors ${
+                  tipoPago === 'cobrado'
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                ✅ Ya pagó
+              </button>
+              <button
+                onClick={() => setTipoPago('fiado')}
+                className={`py-2.5 px-1 rounded-xl text-xs font-semibold text-center transition-colors ${
+                  tipoPago === 'fiado'
+                    ? 'bg-amber-500 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                <Clock size={11} className="inline mr-0.5" />Fiado
+              </button>
+            </div>
+
+            {tipoPago === 'entregar' && (
+              <p className="text-xs text-gray-400 text-center">Se guardará como pedido pendiente de entrega</p>
+            )}
+            {tipoPago === 'fiado' && (
+              <div>
+                <label className="text-xs font-medium text-amber-700 block mb-1">Fecha acordada de cobro (opcional)</label>
+                <input type="date" value={fechaCobro} onChange={e => setFechaCobro(e.target.value)}
+                  className="w-full border border-amber-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-300" />
               </div>
             )}
           </div>
@@ -249,18 +276,20 @@ export default function CotizadorTab() {
               Limpiar
             </button>
             <button
-              onClick={() => registrarVenta(modoFiado)}
+              onClick={registrarVenta}
               disabled={guardando || guardado}
               className={`flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
-                guardado ? 'bg-emerald-500 text-white'
-                : modoFiado ? 'bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white'
-                : 'bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white'
+                guardado          ? 'bg-emerald-500 text-white'
+                : tipoPago === 'cobrado'  ? 'bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white'
+                : tipoPago === 'fiado'    ? 'bg-amber-500  hover:bg-amber-600  disabled:opacity-60 text-white'
+                :                          'bg-orange-500  hover:bg-orange-600  disabled:opacity-60 text-white'
               }`}
             >
-              {guardado ? <><Check size={16} /> ¡Registrada!</>
-                : guardando ? 'Registrando...'
-                : modoFiado ? <><Clock size={16} /> Registrar fiado</>
-                : <><ShoppingCart size={16} /> Registrar venta</>}
+              {guardado            ? <><Check   size={16} /> ¡Registrado!</>
+                : guardando        ? 'Registrando...'
+                : tipoPago === 'cobrado' ? <><Check   size={16} /> Registrar venta</>
+                : tipoPago === 'fiado'   ? <><Clock   size={16} /> Registrar fiado</>
+                :                         <><Package  size={16} /> Registrar pedido</>}
             </button>
           </div>
         </>

@@ -11,18 +11,25 @@ export async function GET(req: NextRequest) {
 
     const db = await getDb();
 
-    let sql = `SELECT v.id, v.fecha, v.total, v.total_costo, v.notas, v.fiado, v.fecha_cobro, v.cobrado, v.cliente, v.created_at
+    const pendientes = searchParams.get('pendientes');
+
+    let sql = `SELECT v.id, v.fecha, v.total, v.total_costo, v.notas, v.fiado, v.fecha_cobro, v.cobrado, v.cliente, v.tipo_pago, v.created_at
                FROM ventas v`;
     const args: (string | number)[] = [];
 
-    if (desde && hasta) {
-      sql += ` WHERE v.fecha BETWEEN ? AND ?`;
-      args.push(desde, hasta);
-    } else if (desde) {
-      sql += ` WHERE v.fecha >= ?`;
-      args.push(desde);
+    if (pendientes === '1') {
+      sql += ` WHERE (v.tipo_pago = 'entregar' AND v.cobrado = 0)`;
+      sql += ` ORDER BY v.created_at ASC`;
+    } else {
+      if (desde && hasta) {
+        sql += ` WHERE v.fecha BETWEEN ? AND ?`;
+        args.push(desde, hasta);
+      } else if (desde) {
+        sql += ` WHERE v.fecha >= ?`;
+        args.push(desde);
+      }
+      sql += ` ORDER BY v.fecha DESC, v.created_at DESC`;
     }
-    sql += ` ORDER BY v.fecha DESC, v.created_at DESC`;
 
     const rVentas = await db.execute({ sql, args });
     const ventas = toRows(rVentas.rows, rVentas.columns as string[]);
@@ -68,12 +75,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fecha, items, notas, fiado, fecha_cobro, cliente } = body as {
+    const { fecha, items, notas, fiado, fecha_cobro, cliente, tipo_pago } = body as {
       fecha: string;
       notas?: string;
       fiado?: boolean;
       fecha_cobro?: string;
       cliente?: string;
+      tipo_pago?: 'cobrado' | 'entregar' | 'fiado';
       items: { producto_id?: number; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number }[];
     };
 
@@ -81,14 +89,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Faltan campos obligatorios' }, { status: 400 });
     }
 
+    // Derivar tipo_pago (retrocompatible con campo fiado legacy)
+    const tipoPagoFinal = tipo_pago ?? (fiado ? 'fiado' : 'cobrado');
+    const esFiado   = tipoPagoFinal === 'fiado'   ? 1 : 0;
+    const esCobrado = tipoPagoFinal === 'cobrado' ? 1 : 0;
+
     const total       = items.reduce((s, i) => s + i.cantidad * i.precio_unitario, 0);
     const total_costo = items.reduce((s, i) => s + i.cantidad * i.costo_unitario,  0);
 
     const db = await getDb();
 
     const rVenta = await db.execute({
-      sql: `INSERT INTO ventas (fecha, total, total_costo, notas, fiado, fecha_cobro, cobrado, cliente) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-      args: [fecha, total, total_costo, notas ?? '', fiado ? 1 : 0, fecha_cobro ?? null, cliente ?? ''],
+      sql: `INSERT INTO ventas (fecha, total, total_costo, notas, fiado, fecha_cobro, cobrado, cliente, tipo_pago) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [fecha, total, total_costo, notas ?? '', esFiado, fecha_cobro ?? null, esCobrado, cliente ?? '', tipoPagoFinal],
     });
     const ventaId = Number(rVenta.lastInsertRowid);
 

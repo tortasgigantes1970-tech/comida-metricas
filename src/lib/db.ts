@@ -5,7 +5,7 @@ import fs from 'fs';
 const TURSO_URL  = process.env.TURSO_URL;
 const TURSO_TOKEN = process.env.TURSO_TOKEN;
 const DB_PATH = path.join(process.cwd(), 'data', 'comida.db');
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -13,6 +13,22 @@ declare global {
 }
 
 export async function getDb(): Promise<Client> {
+  // ── Producción (Turso) ──────────────────────────────────────────────────
+  // Creamos un cliente HTTP fresco en cada petición; nunca lo cacheamos.
+  // Razón: con global.__comida_db la instancia serverless de Vercel puede
+  // retener un cliente WebSocket (libsql://) de una invocación anterior y
+  // devolver datos stale. Con https:// + sin caché cada execute() es una
+  // petición HTTP nueva al primario de Turso → datos siempre actuales.
+  // Las migraciones ya corrieron en el primer deploy; no es necesario
+  // repetirlas en cada petición.
+  if (TURSO_URL && TURSO_TOKEN) {
+    // libsql:// abre WebSocket directo al servidor PRIMARIO de Turso.
+    // Creamos un cliente nuevo por request (sin caché) para garantizar
+    // que siempre leemos del primario y nunca de una réplica desactualizada.
+    return createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
+  }
+
+  // ── Desarrollo local (SQLite) ───────────────────────────────────────────
   if (global.__comida_db && global.__comida_db.version >= SCHEMA_VERSION) {
     return global.__comida_db.client;
   }
@@ -20,9 +36,6 @@ export async function getDb(): Promise<Client> {
   let client: Client;
   if (global.__comida_db?.client) {
     client = global.__comida_db.client;
-  } else if (TURSO_URL && TURSO_TOKEN) {
-    // Producción: base de datos en la nube (Turso)
-    client = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
   } else {
     // Desarrollo local: archivo SQLite
     const dir = path.dirname(DB_PATH);
@@ -117,6 +130,10 @@ export async function getDb(): Promise<Client> {
     `ALTER TABLE ventas ADD COLUMN fecha_cobro TEXT`,
     `ALTER TABLE ventas ADD COLUMN cobrado     INTEGER DEFAULT 0`,
     `ALTER TABLE ventas ADD COLUMN cliente     TEXT    DEFAULT ''`,
+    // v4: tipo_pago distingue 'cobrado' | 'entregar' | 'fiado'
+    `ALTER TABLE ventas ADD COLUMN tipo_pago   TEXT    DEFAULT 'cobrado'`,
+    // Las ventas fiadas existentes pasan a tipo_pago='fiado'
+    `UPDATE ventas SET tipo_pago = 'fiado' WHERE fiado = 1 AND (tipo_pago IS NULL OR tipo_pago = 'cobrado')`,
   ];
   for (const sql of migraciones) {
     try { await client.execute({ sql, args: [] }); } catch { /* columna ya existe */ }
