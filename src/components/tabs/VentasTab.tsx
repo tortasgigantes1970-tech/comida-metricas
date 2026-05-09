@@ -69,7 +69,8 @@ export default function VentasTab() {
   const [pedidos, setPedidos]         = useState<Venta[]>([]);
   const [productos, setProductos]     = useState<Producto[]>([]);
   const [loading, setLoading]         = useState(true);
-  const [ultimoCobrado, setUltimoCobrado] = useState<Venta | null>(null);
+  const [ultimoCobrado, setUltimoCobrado]     = useState<Venta | null>(null);
+  const [showFiadosDetalle, setShowFiadosDetalle] = useState(false);
   const [modal, setModal]         = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expanded, setExpanded]   = useState<number | null>(null);
@@ -192,9 +193,10 @@ export default function VentasTab() {
   };
 
   // Fiados pendientes
-  const fiadosPendientes = ventas.filter(v => !!v.fiado && !v.cobrado);
-  const totalFiado       = fiadosPendientes.reduce((s, v) => s + v.total, 0);
-  const fiadosVencidos   = fiadosPendientes.filter(v => v.fecha_cobro && isPast(parseISO(v.fecha_cobro)));
+  const fiadosPendientes   = ventas.filter(v => !!v.fiado && !v.cobrado);
+  const fiadosVencidos     = fiadosPendientes.filter(v => v.fecha_cobro && isPast(parseISO(v.fecha_cobro)));
+  const totalFiado         = fiadosPendientes.reduce((s, v) => s + v.total, 0);
+  const totalFiadosVencidos = fiadosVencidos.reduce((s, v) => s + v.total, 0);
 
   // Ventas que se muestran en la lista del período (excluye pedidos pendientes de entrega)
   const ventasMostrar = ventas.filter(v => !(v.tipo_pago === 'entregar' && !v.cobrado));
@@ -256,9 +258,13 @@ export default function VentasTab() {
 
       {/* Alerta fiados pendientes */}
       {fiadosPendientes.length > 0 && (
-        <div className={`rounded-2xl p-4 border ${fiadosVencidos.length > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-          <div className="flex items-start gap-3">
-            <AlertCircle size={18} className={fiadosVencidos.length > 0 ? 'text-red-500 mt-0.5 shrink-0' : 'text-amber-500 mt-0.5 shrink-0'} />
+        <div className={`rounded-2xl border overflow-hidden ${fiadosVencidos.length > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+          {/* Cabecera clicable */}
+          <button
+            className="w-full p-4 flex items-center gap-3 text-left"
+            onClick={() => fiadosVencidos.length > 0 && setShowFiadosDetalle(v => !v)}
+          >
+            <AlertCircle size={18} className={`mt-0.5 shrink-0 ${fiadosVencidos.length > 0 ? 'text-red-500' : 'text-amber-500'}`} />
             <div className="flex-1 min-w-0">
               <p className={`text-sm font-semibold ${fiadosVencidos.length > 0 ? 'text-red-700' : 'text-amber-700'}`}>
                 {fiadosVencidos.length > 0
@@ -266,10 +272,47 @@ export default function VentasTab() {
                   : `${fiadosPendientes.length} fiado${fiadosPendientes.length > 1 ? 's' : ''} por cobrar`}
               </p>
               <p className={`text-xs mt-0.5 ${fiadosVencidos.length > 0 ? 'text-red-500' : 'text-amber-500'}`}>
-                Total pendiente: {$(totalFiado)}
+                Total pendiente: {$(fiadosVencidos.length > 0 ? totalFiadosVencidos : totalFiado)}
               </p>
             </div>
-          </div>
+            {fiadosVencidos.length > 0 && (
+              <span className={`text-xs font-medium shrink-0 ${fiadosVencidos.length > 0 ? 'text-red-400' : 'text-amber-400'}`}>
+                {showFiadosDetalle ? 'Ocultar ▲' : 'Ver detalle ▼'}
+              </span>
+            )}
+          </button>
+
+          {/* Detalle de fiados vencidos */}
+          {showFiadosDetalle && fiadosVencidos.length > 0 && (
+            <div className="border-t border-red-200 divide-y divide-red-100">
+              {fiadosVencidos.map(v => (
+                <div key={v.id} className="px-4 py-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-red-800 truncate">
+                      {v.cliente || 'Sin nombre'}
+                    </p>
+                    {v.fecha_cobro && (
+                      <p className="text-xs text-red-400">
+                        Venció el {formatFechaCobro(v.fecha_cobro)}
+                      </p>
+                    )}
+                    <p className="text-xs text-red-400 truncate">
+                      {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <p className="text-sm font-bold text-red-700">{$(v.total)}</p>
+                    <button
+                      onClick={() => marcarCobrado(v.id)}
+                      className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                    >
+                      <CheckCircle2 size={11} /> Cobrado
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
