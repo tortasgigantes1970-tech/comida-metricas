@@ -12,10 +12,11 @@ interface Venta { id: number; fecha: string; total: number; total_costo: number;
 interface Gasto { id: number; fecha: string; monto: number; categoria: string; }
 
 interface ClienteTop { nombre: string; total: number; visitas: number; }
+interface PeriodoStats { ventas: number; costo: number; ganancia: number; margen: number; count: number; ticketPromedio: number; }
 interface DashData {
-  hoy:    { ventas: number; costo: number; ganancia: number; margen: number };
-  semana: { ventas: number; costo: number; ganancia: number; margen: number };
-  mes:    { ventas: number; costo: number; ganancia: number; margen: number; gastos: number; ganancia_neta: number; margen_neto: number };
+  hoy:    PeriodoStats;
+  semana: PeriodoStats;
+  mes:    PeriodoStats & { gastos: number; ganancia_neta: number; margen_neto: number; gananciaPorDia: number; };
   tendencia:       { fecha: string; ventas: number; costo: number }[];
   top_productos:   { nombre_producto: string; unidades: number; revenue: number; costo: number }[];
   gastos_cat:      { categoria: string; total: number }[];
@@ -43,11 +44,12 @@ function formatFecha(dateStr: string) {
   return `${d}/${m}`;
 }
 
-function cal(ventas: number, costo: number) {
+function cal(ventas: number, costo: number, count: number): PeriodoStats {
   return {
-    ventas, costo,
+    ventas, costo, count,
     ganancia: ventas - costo,
     margen: ventas > 0 ? Math.round(((ventas - costo) / ventas) * 100) : 0,
+    ticketPromedio: count > 0 ? ventas / count : 0,
   };
 }
 
@@ -62,8 +64,9 @@ function calcularDashboard(ventasTodas: Venta[], gastos: Gasto[]): DashData {
   const sum = (arr: Venta[], desde: string, hasta: string) => {
     const filtradas = arr.filter(v => v.fecha >= desde && v.fecha <= hasta);
     return {
-      v: filtradas.reduce((s, v) => s + Number(v.total), 0),
-      c: filtradas.reduce((s, v) => s + Number(v.total_costo), 0),
+      v:     filtradas.reduce((s, v) => s + Number(v.total), 0),
+      c:     filtradas.reduce((s, v) => s + Number(v.total_costo), 0),
+      count: filtradas.length,
     };
   };
 
@@ -71,7 +74,9 @@ function calcularDashboard(ventasTodas: Venta[], gastos: Gasto[]): DashData {
   const s = sum(ventas, inicioSem, hoy);
   const m = sum(ventas, inicioMes, hoy);
   const gastosM = gastos.reduce((s, g) => s + Number(g.monto), 0);
-  const mesCalc = cal(m.v, m.c);
+  const mesCalc = cal(m.v, m.c, m.count);
+  // Días transcurridos del mes (del 1 al día de hoy)
+  const diasMes = new Date().getDate();
 
   // Tendencia: agrupar por fecha
   const tendMap: Record<string, { ventas: number; costo: number }> = {};
@@ -126,15 +131,16 @@ function calcularDashboard(ventasTodas: Venta[], gastos: Gasto[]): DashData {
   };
 
   return {
-    hoy:    cal(h.v, h.c),
-    semana: cal(s.v, s.c),
+    hoy:    cal(h.v, h.c, h.count),
+    semana: cal(s.v, s.c, s.count),
     mes: {
       ...mesCalc,
-      gastos:        gastosM,
-      ganancia_neta: mesCalc.ganancia - gastosM,
-      margen_neto:   mesCalc.ventas > 0
+      gastos:         gastosM,
+      ganancia_neta:  mesCalc.ganancia - gastosM,
+      margen_neto:    mesCalc.ventas > 0
         ? Math.round(((mesCalc.ganancia - gastosM) / mesCalc.ventas) * 100)
         : 0,
+      gananciaPorDia: diasMes > 0 ? mesCalc.ganancia / diasMes : 0,
     },
     tendencia,
     top_productos,
@@ -218,21 +224,23 @@ export default function DashboardTab({ active }: { active: boolean }) {
       {/* Hoy */}
       <section>
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Hoy</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard label="Ventas"   value={$(hoy.ventas)}   color="orange" />
-          <StatCard label="Costo"    value={$(hoy.costo)}    />
-          <StatCard label="Ganancia" value={$(hoy.ganancia)} color={hoy.ganancia >= 0 ? 'green' : 'red'} />
-          <StatCard label="Margen"   value={`${hoy.margen}%`} sub="ganancia bruta" color={hoy.margen >= 50 ? 'green' : hoy.margen >= 30 ? 'orange' : 'red'} />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <StatCard label="Ingresos"     value={$(hoy.ventas)}        color="orange" />
+          <StatCard label="Ganancia"     value={$(hoy.ganancia)}      color={hoy.ganancia >= 0 ? 'green' : 'red'} />
+          <StatCard label="Margen"       value={`${hoy.margen}%`}     sub="ganancia bruta" color={hoy.margen >= 50 ? 'green' : hoy.margen >= 30 ? 'orange' : 'red'} />
+          <StatCard label="Num. ventas"  value={`${hoy.count}`}       sub="pedidos del día" />
+          <StatCard label="Ticket prom." value={hoy.count > 0 ? $(hoy.ticketPromedio) : '—'} sub="por venta" />
         </div>
       </section>
 
       {/* Esta semana */}
       <section>
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Esta semana</h2>
-        <div className="grid grid-cols-3 gap-3">
-          <StatCard label="Ventas"   value={$(semana.ventas)}   color="orange" />
-          <StatCard label="Costo"    value={$(semana.costo)}    />
-          <StatCard label="Ganancia" value={$(semana.ganancia)} color={semana.ganancia >= 0 ? 'green' : 'red'} />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard label="Ingresos"     value={$(semana.ventas)}     color="orange" />
+          <StatCard label="Ganancia"     value={$(semana.ganancia)}   color={semana.ganancia >= 0 ? 'green' : 'red'} />
+          <StatCard label="Num. ventas"  value={`${semana.count}`}    sub="esta semana" />
+          <StatCard label="Ticket prom." value={semana.count > 0 ? $(semana.ticketPromedio) : '—'} sub="por venta" />
         </div>
       </section>
 
@@ -240,11 +248,14 @@ export default function DashboardTab({ active }: { active: boolean }) {
       <section>
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Este mes</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <StatCard label="Ventas"       value={$(mes.ventas)}        color="orange" />
-          <StatCard label="Costo ventas" value={$(mes.costo)}         />
-          <StatCard label="Gan. bruta"   value={$(mes.ganancia)}      color="green"  sub={`${mes.margen}% margen`} />
-          <StatCard label="Gastos oper." value={$(mes.gastos)}        color="red"    />
-          <StatCard label="Gan. neta"    value={$(mes.ganancia_neta)} color={mes.ganancia_neta >= 0 ? 'green' : 'red'} sub={`${mes.margen_neto}% margen neto`} />
+          <StatCard label="Ingresos"      value={$(mes.ventas)}        color="orange" />
+          <StatCard label="Costo ventas"  value={$(mes.costo)}         />
+          <StatCard label="Gan. bruta"    value={$(mes.ganancia)}      color="green"  sub={`${mes.margen}% margen`} />
+          <StatCard label="Gastos oper."  value={$(mes.gastos)}        color="red"    />
+          <StatCard label="Gan. neta"     value={$(mes.ganancia_neta)} color={mes.ganancia_neta >= 0 ? 'green' : 'red'} sub={`${mes.margen_neto}% margen neto`} />
+          <StatCard label="Num. ventas"   value={`${mes.count}`}       sub="este mes" />
+          <StatCard label="Ticket prom."  value={mes.count > 0 ? $(mes.ticketPromedio) : '—'} sub="por venta" />
+          <StatCard label="Gan. prom/día" value={$(mes.gananciaPorDia)} color="green" sub="promedio diario" />
         </div>
       </section>
 
