@@ -249,6 +249,12 @@ export default function VentasTab() {
                   >
                     <CheckCircle2 size={11} /> Cobrado
                   </button>
+                  <button
+                    onClick={() => openEdit(p)}
+                    className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <Pencil size={11} /> Editar
+                  </button>
                 </div>
               </div>
             ))}
