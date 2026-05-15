@@ -294,14 +294,15 @@ export default function VentasTab() {
                 )}
               </p>
               {!isMulti && (
-                <p className={`text-xs truncate ${opts.colorSubtext}`}>
-                  {grupo.fiados[0].items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
-                </p>
-              )}
-              {!isMulti && grupo.fiados[0].fecha_cobro && (
-                <p className={`text-xs ${opts.colorSubtext}`}>
-                  {etiquetaFecha(grupo.fiados[0].fecha_cobro, hoyDate)}
-                </p>
+                <>
+                  <p className={`text-xs truncate ${opts.colorSubtext}`}>
+                    {grupo.fiados[0].items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                  </p>
+                  <p className={`text-xs ${opts.colorSubtext} opacity-70`}>
+                    Pedido: {format(parseISO(grupo.fiados[0].fecha), "d 'de' MMMM", { locale: es })}
+                    {grupo.fiados[0].fecha_cobro ? ` · ${etiquetaFecha(grupo.fiados[0].fecha_cobro, hoyDate)}` : ''}
+                  </p>
+                </>
               )}
             </div>
 
@@ -342,6 +343,12 @@ export default function VentasTab() {
                   >
                     <MessageCircle size={11} /> Enviar orden
                   </button>
+                  <button
+                    onClick={() => openEdit(grupo.fiados[0])}
+                    className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <Pencil size={11} /> Editar
+                  </button>
                 </>
               )}
             </div>
@@ -351,24 +358,29 @@ export default function VentasTab() {
           {isMulti && isOpen && (
             <div className={`${opts.rowBg} divide-y ${opts.divideClass}`}>
               {grupo.fiados.map(v => (
-                <div key={v.id} className="pl-8 pr-4 py-2.5 flex items-center gap-3">
+                <div key={v.id} className="pl-8 pr-4 py-2.5 flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs truncate ${opts.colorSubtext}`}>
                       {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
                     </p>
-                    {v.fecha_cobro && (
-                      <p className={`text-xs ${opts.colorSubtext} opacity-70`}>
-                        {etiquetaFecha(v.fecha_cobro, hoyDate)}
-                      </p>
-                    )}
+                    <p className={`text-xs ${opts.colorSubtext} opacity-70`}>
+                      {format(parseISO(v.fecha), "d 'de' MMMM", { locale: es })}
+                      {v.fecha_cobro ? ` · ${etiquetaFecha(v.fecha_cobro, hoyDate)}` : ''}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-col items-end gap-1 shrink-0">
                     <p className={`text-xs font-semibold ${opts.colorText}`}>{$(v.total)}</p>
                     <button
                       onClick={() => marcarCobrado(v.id)}
                       className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
                     >
                       <CheckCircle2 size={11} /> Cobrar
+                    </button>
+                    <button
+                      onClick={() => openEdit(v)}
+                      className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
+                    >
+                      <Pencil size={11} /> Editar
                     </button>
                   </div>
                 </div>
