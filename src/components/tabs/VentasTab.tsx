@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock, Package } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock, Package, Truck } from 'lucide-react';
 import ClienteInput from '@/components/ClienteInput';
 import GestionarClientesModal from '@/components/GestionarClientesModal';
-import { format, endOfMonth, isPast, parseISO } from 'date-fns';
+import { format, endOfMonth, isBefore, isToday, startOfDay, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import Modal from '@/components/Modal';
 
@@ -13,7 +13,7 @@ interface Venta {
   id: number; fecha: string; total: number; total_costo: number; ganancia: number;
   notas: string; items: VentaItem[];
   fiado: number; fecha_cobro: string | null; cobrado: number; cliente: string;
-  tipo_pago: string; created_at: string;
+  tipo_pago: string; created_at: string; entregado: number;
 }
 
 interface FormItem { producto_id: number | null; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number; }
@@ -30,32 +30,13 @@ function formatFechaCobro(fecha: string) {
 
 function formatHora(createdAt: string) {
   try {
-    // created_at viene como "2025-05-06 14:30:00" (UTC de la BD)
     const iso = createdAt.replace(' ', 'T') + 'Z';
     return format(parseISO(iso), 'h:mm a');
   } catch { return ''; }
 }
 
-const $_plain = (n: number) =>
-  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(n);
-
 function abrirWhatsApp(texto: string) {
   window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
-}
-
-function mensajeConfirmacion(v: { cliente: string; items: VentaItem[]; total: number }) {
-  const items = v.items.map(it => `• ${it.cantidad}× ${it.nombre_producto}`).join('\n');
-  return [
-    `¡Hola${v.cliente ? ` ${v.cliente}` : ''}! 👋`,
-    '',
-    'Tu pedido está confirmado ✅',
-    '',
-    items,
-    '',
-    `*Total: ${$_plain(v.total)}*`,
-    '',
-    'Te avisamos cuando esté listo 🍽️',
-  ].join('\n');
 }
 
 function mensajeAgradecimiento(v: { cliente: string }) {
@@ -67,13 +48,14 @@ function mensajeAgradecimiento(v: { cliente: string }) {
 }
 
 export default function VentasTab() {
-  const [ventas, setVentas]           = useState<Venta[]>([]);
-  const [pedidos, setPedidos]         = useState<Venta[]>([]);
-  const [productos, setProductos]     = useState<Producto[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [ultimoCobrado, setUltimoCobrado]         = useState<Venta | null>(null);
-  const [showFiadosDetalle, setShowFiadosDetalle] = useState(false);
-  const [showGestClientes, setShowGestClientes]   = useState(false);
+  const [ventas, setVentas]       = useState<Venta[]>([]);
+  const [pedidos, setPedidos]     = useState<Venta[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [loading, setLoading]     = useState(true);
+
+  const [ultimoCobrado, setUltimoCobrado] = useState<Venta | null>(null);
+  const [showFiados, setShowFiados]       = useState<{ hoy: boolean; vencidos: boolean; porCobrar: boolean }>({ hoy: false, vencidos: false, porCobrar: false });
+  const [showGestClientes, setShowGestClientes] = useState(false);
   const [modal, setModal]         = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expanded, setExpanded]   = useState<number | null>(null);
@@ -81,18 +63,18 @@ export default function VentasTab() {
   const [mes, setMes] = useState(format(new Date(), 'yyyy-MM'));
 
   // Form nueva/editar venta
-  const [fecha, setFecha]       = useState(hoyStr());
-  const [notas, setNotas]       = useState('');
-  const [items, setItems]       = useState<FormItem[]>([]);
-  const [saving, setSaving]     = useState(false);
+  const [fecha, setFecha]           = useState(hoyStr());
+  const [notas, setNotas]           = useState('');
+  const [items, setItems]           = useState<FormItem[]>([]);
+  const [saving, setSaving]         = useState(false);
   const [esFiado, setEsFiado]       = useState(false);
   const [fechaCobro, setFechaCobro] = useState('');
   const [cliente, setCliente]       = useState('');
 
   // Buscador
-  const [busqueda, setBusqueda]   = useState('');
-  const [showSugg, setShowSugg]   = useState(false);
-  const busquedaRef               = useRef<HTMLDivElement>(null);
+  const [busqueda, setBusqueda] = useState('');
+  const [showSugg, setShowSugg] = useState(false);
+  const busquedaRef             = useRef<HTMLDivElement>(null);
 
   const sugerencias = busqueda.trim().length === 0
     ? productos
@@ -174,18 +156,22 @@ export default function VentasTab() {
         await fetch('/api/ventas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       setModal(false);
-      // Disparar en paralelo: dashboard empieza a refrescar al mismo tiempo que ventas
       window.dispatchEvent(new CustomEvent('datos-actualizados'));
       await load();
     } finally { setSaving(false); }
   };
 
   const marcarCobrado = async (id: number) => {
-    // Capturar el pedido antes de que desaparezca de la lista
     const pedido = pedidos.find(p => p.id === id) ?? ventas.find(v => v.id === id) ?? null;
     await fetch(`/api/ventas/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cobrado: true }) });
     window.dispatchEvent(new CustomEvent('datos-actualizados'));
     if (pedido) setUltimoCobrado(pedido);
+    await load();
+  };
+
+  const marcarEntregado = async (id: number) => {
+    await fetch(`/api/ventas/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entregado: true }) });
+    window.dispatchEvent(new CustomEvent('datos-actualizados'));
     await load();
   };
 
@@ -195,17 +181,56 @@ export default function VentasTab() {
     await load();
   };
 
-  // Fiados pendientes
-  const fiadosPendientes   = ventas.filter(v => !!v.fiado && !v.cobrado);
-  const fiadosVencidos     = fiadosPendientes.filter(v => v.fecha_cobro && isPast(parseISO(v.fecha_cobro)));
-  const totalFiado         = fiadosPendientes.reduce((s, v) => s + v.total, 0);
-  const totalFiadosVencidos = fiadosVencidos.reduce((s, v) => s + v.total, 0);
+  // ── Fiados — 3 grupos ─────────────────────────────────────────────────────
+  const fiadosPendientes = ventas.filter(v => !!v.fiado && !v.cobrado);
+  const hoyDate          = startOfDay(new Date());
+  const vencenHoy  = fiadosPendientes.filter(v => v.fecha_cobro && isToday(parseISO(v.fecha_cobro)));
+  const vencidos   = fiadosPendientes.filter(v => v.fecha_cobro && isBefore(parseISO(v.fecha_cobro), hoyDate));
+  const porCobrar  = fiadosPendientes.filter(v => !v.fecha_cobro || (!isToday(parseISO(v.fecha_cobro)) && !isBefore(parseISO(v.fecha_cobro), hoyDate)));
 
-  // Ventas que se muestran en la lista del período (excluye pedidos pendientes de entrega)
-  const ventasMostrar = ventas.filter(v => !(v.tipo_pago === 'entregar' && !v.cobrado));
+  // ── Pedidos — 2 secciones ─────────────────────────────────────────────────
+  // Pendientes de entregar: todo lo que aún no está entregado (sin importar cobrado)
+  const pedidosPendEntrega = pedidos.filter(p => !p.entregado);
+  // Entregados pero sin cobrar
+  const pedidosEntregados  = pedidos.filter(p => !!p.entregado && !p.cobrado);
 
+  // ── Lista de ventas del período (excluye pedidos no cerrados) ─────────────
+  const ventasMostrar   = ventas.filter(v => v.tipo_pago !== 'entregar' || (!!v.entregado && !!v.cobrado));
   const totalPeriodo    = ventasMostrar.reduce((s, v) => s + v.total, 0);
   const gananciaPeriodo = ventasMostrar.reduce((s, v) => s + v.ganancia, 0);
+
+  // Helper: fila de fiado (función, no componente, para evitar remounts)
+  const renderFiadoFila = (
+    v: Venta,
+    opts: { colorText: string; colorSubtext: string; borderClass: string }
+  ) => (
+    <div key={v.id} className={`px-4 py-3 flex items-center gap-3 border-t ${opts.borderClass}`}>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium truncate ${opts.colorText}`}>{v.cliente || 'Sin nombre'}</p>
+        {v.fecha_cobro && (
+          <p className={`text-xs ${opts.colorSubtext}`}>
+            {isToday(parseISO(v.fecha_cobro))
+              ? 'Hoy'
+              : isBefore(parseISO(v.fecha_cobro), hoyDate)
+                ? `Venció el ${formatFechaCobro(v.fecha_cobro)}`
+                : `Cobrar el ${formatFechaCobro(v.fecha_cobro)}`}
+          </p>
+        )}
+        <p className={`text-xs truncate ${opts.colorSubtext}`}>
+          {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+        </p>
+      </div>
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <p className={`text-sm font-bold ${opts.colorText}`}>{$(v.total)}</p>
+        <button
+          onClick={() => marcarCobrado(v.id)}
+          className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+        >
+          <CheckCircle2 size={11} /> Cobrado
+        </button>
+      </div>
+    </div>
+  );
 
   if (loading) return <div className="flex items-center justify-center h-60 text-gray-400">Cargando...</div>;
 
@@ -230,105 +255,175 @@ export default function VentasTab() {
         </button>
       </div>
 
-      {/* Pedidos activos */}
-      {pedidos.length > 0 && (
+      {/* ── Pedidos activos ─────────────────────────────────────────────────── */}
+      {(pedidosPendEntrega.length > 0 || pedidosEntregados.length > 0) && (
         <div className="rounded-2xl border border-orange-200 bg-orange-50 overflow-hidden">
+          {/* Cabecera */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-orange-100">
             <Package size={15} className="text-orange-500 shrink-0" />
             <p className="text-sm font-semibold text-orange-700 flex-1">Pedidos activos</p>
-            <span className="bg-orange-500 text-white text-xs font-bold rounded-full px-2 py-0.5">{pedidos.length}</span>
+            <span className="bg-orange-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
+              {pedidosPendEntrega.length + pedidosEntregados.length}
+            </span>
           </div>
-          <div className="divide-y divide-orange-100">
-            {pedidos.map(p => (
-              <div key={p.id} className="px-4 py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {p.cliente
-                      ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
-                      : <span className="text-sm text-gray-400 italic">Sin nombre</span>}
-                    <span className="text-xs text-gray-400">{formatHora(p.created_at)}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 truncate mt-0.5">
-                    {p.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end shrink-0 gap-1">
-                  <p className="text-sm font-bold text-orange-500">{$(p.total)}</p>
-                  <button
-                    onClick={() => marcarCobrado(p.id)}
-                    className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <CheckCircle2 size={11} /> Cobrado
-                  </button>
-                  <button
-                    onClick={() => openEdit(p)}
-                    className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <Pencil size={11} /> Editar
-                  </button>
-                </div>
+
+          {/* Sección 1: Pendientes de entregar */}
+          {pedidosPendEntrega.length > 0 && (
+            <>
+              <div className="px-4 py-1.5 bg-orange-100/60">
+                <p className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Pendientes de entregar</p>
               </div>
-            ))}
-          </div>
+              <div className="divide-y divide-orange-100">
+                {pedidosPendEntrega.map(p => (
+                  <div key={p.id} className="px-4 py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {p.cliente
+                          ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
+                          : <span className="text-sm text-gray-400 italic">Sin nombre</span>}
+                        <span className="text-xs text-gray-400">{formatHora(p.created_at)}</span>
+                        {!!p.cobrado && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-600">Pagado</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                        {p.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end shrink-0 gap-1">
+                      <p className="text-sm font-bold text-orange-500">{$(p.total)}</p>
+                      <button
+                        onClick={() => marcarEntregado(p.id)}
+                        className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 bg-white border border-orange-200 rounded-lg px-2 py-1 transition-colors"
+                      >
+                        <Truck size={11} /> Entregado
+                      </button>
+                      {!p.cobrado && (
+                        <button
+                          onClick={() => marcarCobrado(p.id)}
+                          className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                        >
+                          <CheckCircle2 size={11} /> Cobrado
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openEdit(p)}
+                        className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
+                      >
+                        <Pencil size={11} /> Editar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Sección 2: Entregados — pendientes de pago */}
+          {pedidosEntregados.length > 0 && (
+            <>
+              <div className={`px-4 py-1.5 bg-orange-100/60 ${pedidosPendEntrega.length > 0 ? 'border-t border-orange-200' : ''}`}>
+                <p className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Entregados — pendientes de pago</p>
+              </div>
+              <div className="divide-y divide-orange-100">
+                {pedidosEntregados.map(p => (
+                  <div key={p.id} className="px-4 py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {p.cliente
+                          ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
+                          : <span className="text-sm text-gray-400 italic">Sin nombre</span>}
+                        <span className="text-xs text-gray-400">{formatHora(p.created_at)}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                        {p.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end shrink-0 gap-1">
+                      <p className="text-sm font-bold text-orange-500">{$(p.total)}</p>
+                      <button
+                        onClick={() => marcarCobrado(p.id)}
+                        className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                      >
+                        <CheckCircle2 size={11} /> Cobrado
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* Alerta fiados pendientes */}
-      {fiadosPendientes.length > 0 && (
-        <div className={`rounded-2xl border overflow-hidden ${fiadosVencidos.length > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-          {/* Cabecera clicable */}
+      {/* ── Fiados: se cobran hoy (amber) ───────────────────────────────────── */}
+      {vencenHoy.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 overflow-hidden">
           <button
-            className="w-full p-4 flex items-center gap-3 text-left"
-            onClick={() => fiadosVencidos.length > 0 && setShowFiadosDetalle(v => !v)}
+            className="w-full px-4 py-3 flex items-center gap-3 text-left"
+            onClick={() => setShowFiados(s => ({ ...s, hoy: !s.hoy }))}
           >
-            <AlertCircle size={18} className={`mt-0.5 shrink-0 ${fiadosVencidos.length > 0 ? 'text-red-500' : 'text-amber-500'}`} />
+            <AlertCircle size={18} className="text-amber-500 shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className={`text-sm font-semibold ${fiadosVencidos.length > 0 ? 'text-red-700' : 'text-amber-700'}`}>
-                {fiadosVencidos.length > 0
-                  ? `${fiadosVencidos.length} fiado${fiadosVencidos.length > 1 ? 's' : ''} vencido${fiadosVencidos.length > 1 ? 's' : ''}`
-                  : `${fiadosPendientes.length} fiado${fiadosPendientes.length > 1 ? 's' : ''} por cobrar`}
+              <p className="text-sm font-semibold text-amber-700">
+                {vencenHoy.length} fiado{vencenHoy.length > 1 ? 's' : ''} se cobran hoy
               </p>
-              <p className={`text-xs mt-0.5 ${fiadosVencidos.length > 0 ? 'text-red-500' : 'text-amber-500'}`}>
-                Total pendiente: {$(fiadosVencidos.length > 0 ? totalFiadosVencidos : totalFiado)}
+              <p className="text-xs text-amber-500 mt-0.5">
+                Total: {$(vencenHoy.reduce((s, v) => s + v.total, 0))}
               </p>
             </div>
-            {fiadosVencidos.length > 0 && (
-              <span className={`text-xs font-medium shrink-0 ${fiadosVencidos.length > 0 ? 'text-red-400' : 'text-amber-400'}`}>
-                {showFiadosDetalle ? 'Ocultar ▲' : 'Ver detalle ▼'}
-              </span>
-            )}
+            <span className="text-xs text-amber-400 shrink-0">{showFiados.hoy ? 'Ocultar ▲' : 'Ver ▼'}</span>
           </button>
+          {showFiados.hoy && vencenHoy.map(v =>
+            renderFiadoFila(v, { colorText: 'text-amber-800', colorSubtext: 'text-amber-500', borderClass: 'border-amber-100' })
+          )}
+        </div>
+      )}
 
-          {/* Detalle de fiados vencidos */}
-          {showFiadosDetalle && fiadosVencidos.length > 0 && (
-            <div className="border-t border-red-200 divide-y divide-red-100">
-              {fiadosVencidos.map(v => (
-                <div key={v.id} className="px-4 py-3 flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-red-800 truncate">
-                      {v.cliente || 'Sin nombre'}
-                    </p>
-                    {v.fecha_cobro && (
-                      <p className="text-xs text-red-400">
-                        Venció el {formatFechaCobro(v.fecha_cobro)}
-                      </p>
-                    )}
-                    <p className="text-xs text-red-400 truncate">
-                      {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <p className="text-sm font-bold text-red-700">{$(v.total)}</p>
-                    <button
-                      onClick={() => marcarCobrado(v.id)}
-                      className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                    >
-                      <CheckCircle2 size={11} /> Cobrado
-                    </button>
-                  </div>
-                </div>
-              ))}
+      {/* ── Fiados: vencidos (red) ──────────────────────────────────────────── */}
+      {vencidos.length > 0 && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 overflow-hidden">
+          <button
+            className="w-full px-4 py-3 flex items-center gap-3 text-left"
+            onClick={() => setShowFiados(s => ({ ...s, vencidos: !s.vencidos }))}
+          >
+            <AlertCircle size={18} className="text-red-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-700">
+                {vencidos.length} fiado{vencidos.length > 1 ? 's' : ''} vencido{vencidos.length > 1 ? 's' : ''}
+              </p>
+              <p className="text-xs text-red-500 mt-0.5">
+                Total: {$(vencidos.reduce((s, v) => s + v.total, 0))}
+              </p>
             </div>
+            <span className="text-xs text-red-400 shrink-0">{showFiados.vencidos ? 'Ocultar ▲' : 'Ver ▼'}</span>
+          </button>
+          {showFiados.vencidos && vencidos.map(v =>
+            renderFiadoFila(v, { colorText: 'text-red-800', colorSubtext: 'text-red-400', borderClass: 'border-red-100' })
+          )}
+        </div>
+      )}
+
+      {/* ── Fiados: por cobrar (gray) ───────────────────────────────────────── */}
+      {porCobrar.length > 0 && (
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 overflow-hidden">
+          <button
+            className="w-full px-4 py-3 flex items-center gap-3 text-left"
+            onClick={() => setShowFiados(s => ({ ...s, porCobrar: !s.porCobrar }))}
+          >
+            <Clock size={18} className="text-gray-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-600">
+                {porCobrar.length} fiado{porCobrar.length > 1 ? 's' : ''} por cobrar
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Total: {$(porCobrar.reduce((s, v) => s + v.total, 0))}
+              </p>
+            </div>
+            <span className="text-xs text-gray-400 shrink-0">{showFiados.porCobrar ? 'Ocultar ▲' : 'Ver ▼'}</span>
+          </button>
+          {showFiados.porCobrar && porCobrar.map(v =>
+            renderFiadoFila(v, { colorText: 'text-gray-700', colorSubtext: 'text-gray-400', borderClass: 'border-gray-100' })
           )}
         </div>
       )}
@@ -354,7 +449,7 @@ export default function VentasTab() {
         </div>
       )}
 
-      {/* Lista */}
+      {/* Lista de ventas */}
       {ventasMostrar.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <ShoppingCart size={40} className="mx-auto mb-3 opacity-30" />
@@ -364,7 +459,7 @@ export default function VentasTab() {
       ) : (
         <div className="space-y-2">
           {ventasMostrar.map(v => {
-            const esVencido = !!v.fiado && !v.cobrado && !!v.fecha_cobro && isPast(parseISO(v.fecha_cobro));
+            const esVencido = !!v.fiado && !v.cobrado && !!v.fecha_cobro && isBefore(parseISO(v.fecha_cobro), hoyDate);
             return (
               <div key={v.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${esVencido ? 'border-red-300' : v.fiado && !v.cobrado ? 'border-amber-300' : 'border-gray-100'}`}>
                 <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(expanded === v.id ? null : v.id)}>
@@ -509,7 +604,7 @@ export default function VentasTab() {
                 )}
                 {showSugg && busqueda.trim().length > 0 && sugerencias.length === 0 && (
                   <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-sm text-gray-400">
-                    Sin resultados para "{busqueda}"
+                    Sin resultados para &quot;{busqueda}&quot;
                   </div>
                 )}
               </div>

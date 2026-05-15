@@ -5,7 +5,7 @@ import fs from 'fs';
 const TURSO_URL  = process.env.TURSO_URL;
 const TURSO_TOKEN = process.env.TURSO_TOKEN;
 const DB_PATH = path.join(process.cwd(), 'data', 'comida.db');
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -23,6 +23,7 @@ const MIGRACIONES = [
   `ALTER TABLE ventas ADD COLUMN cliente     TEXT    DEFAULT ''`,
   `ALTER TABLE ventas ADD COLUMN tipo_pago   TEXT    DEFAULT 'cobrado'`,
   `UPDATE ventas SET tipo_pago = 'fiado' WHERE fiado = 1 AND (tipo_pago IS NULL OR tipo_pago = 'cobrado')`,
+  `ALTER TABLE ventas ADD COLUMN entregado   INTEGER DEFAULT 0`,
 ];
 
 export async function getDb(): Promise<Client> {

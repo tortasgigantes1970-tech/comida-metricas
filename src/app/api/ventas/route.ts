@@ -13,12 +13,12 @@ export async function GET(req: NextRequest) {
 
     const pendientes = searchParams.get('pendientes');
 
-    let sql = `SELECT v.id, v.fecha, v.total, v.total_costo, v.notas, v.fiado, v.fecha_cobro, v.cobrado, v.cliente, v.tipo_pago, v.created_at
+    let sql = `SELECT v.id, v.fecha, v.total, v.total_costo, v.notas, v.fiado, v.fecha_cobro, v.cobrado, v.cliente, v.tipo_pago, v.created_at, v.entregado
                FROM ventas v`;
     const args: (string | number)[] = [];
 
     if (pendientes === '1') {
-      sql += ` WHERE (v.tipo_pago = 'entregar' AND v.cobrado = 0)`;
+      sql += ` WHERE (v.tipo_pago = 'entregar' AND NOT (v.entregado = 1 AND v.cobrado = 1))`;
       sql += ` ORDER BY v.created_at ASC`;
     } else {
       if (desde && hasta) {

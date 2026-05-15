@@ -6,13 +6,19 @@ export const dynamic = 'force-dynamic';
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id   = Number(params.id);
-    const body = await req.json() as { cobrado?: boolean; fiado?: boolean; fecha_cobro?: string };
+    const body = await req.json() as { cobrado?: boolean; fiado?: boolean; fecha_cobro?: string; entregado?: boolean };
     const db   = await getDb();
 
     if (body.cobrado !== undefined) {
       await db.execute({
         sql:  `UPDATE ventas SET cobrado=? WHERE id=?`,
         args: [body.cobrado ? 1 : 0, id],
+      });
+    }
+    if (body.entregado !== undefined) {
+      await db.execute({
+        sql:  `UPDATE ventas SET entregado=? WHERE id=?`,
+        args: [body.entregado ? 1 : 0, id],
       });
     }
     return NextResponse.json({ ok: true });
