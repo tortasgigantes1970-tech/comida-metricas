@@ -18,6 +18,8 @@ interface Venta {
 
 interface FormItem { producto_id: number | null; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number; }
 
+interface GrupoFiado { key: string; cliente: string; fiados: Venta[]; total: number; }
+
 const $ = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(n);
 
@@ -47,6 +49,30 @@ function mensajeAgradecimiento(v: { cliente: string }) {
   ].join('\n');
 }
 
+/** Agrupa fiados por nombre de cliente. Los sin nombre van cada uno solo. */
+function agruparPorCliente(fiados: Venta[]): GrupoFiado[] {
+  const map = new Map<string, Venta[]>();
+  for (const v of fiados) {
+    const key = v.cliente?.trim() ? v.cliente.trim() : `__anon__${v.id}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(v);
+  }
+  return Array.from(map.entries()).map(([key, vs]) => ({
+    key,
+    cliente: key.startsWith('__anon__') ? '' : key,
+    fiados: vs,
+    total: vs.reduce((s, v) => s + v.total, 0),
+  }));
+}
+
+function etiquetaFecha(fecha_cobro: string | null, hoyDate: Date) {
+  if (!fecha_cobro) return null;
+  const d = parseISO(fecha_cobro);
+  if (isToday(d)) return 'Hoy';
+  if (isBefore(d, hoyDate)) return `Venció el ${formatFechaCobro(fecha_cobro)}`;
+  return `Cobrar el ${formatFechaCobro(fecha_cobro)}`;
+}
+
 export default function VentasTab() {
   const [ventas, setVentas]       = useState<Venta[]>([]);
   const [pedidos, setPedidos]     = useState<Venta[]>([]);
@@ -55,6 +81,8 @@ export default function VentasTab() {
 
   const [ultimoCobrado, setUltimoCobrado] = useState<Venta | null>(null);
   const [showFiados, setShowFiados]       = useState<{ hoy: boolean; vencidos: boolean; porCobrar: boolean }>({ hoy: false, vencidos: false, porCobrar: false });
+  // Grupos de clientes expandidos dentro de cada sección de fiados
+  const [expandedGrupos, setExpandedGrupos] = useState<Set<string>>(new Set());
   const [showGestClientes, setShowGestClientes] = useState(false);
   const [modal, setModal]         = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -103,7 +131,6 @@ export default function VentasTab() {
     return () => window.removeEventListener('datos-actualizados', handler);
   }, [load]);
 
-  // Cerrar sugerencias al hacer clic afuera
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (busquedaRef.current && !busquedaRef.current.contains(e.target as Node)) setShowSugg(false);
@@ -111,6 +138,13 @@ export default function VentasTab() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  const toggleGrupo = (key: string) =>
+    setExpandedGrupos(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   const openModal = () => {
     setEditingId(null); setFecha(hoyStr()); setNotas(''); setItems([]);
@@ -169,6 +203,16 @@ export default function VentasTab() {
     await load();
   };
 
+  const marcarCobradoTodos = async (vs: Venta[]) => {
+    await Promise.all(vs.map(v =>
+      fetch(`/api/ventas/${v.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cobrado: true }) })
+    ));
+    window.dispatchEvent(new CustomEvent('datos-actualizados'));
+    // Toast con el último (representativo del cliente)
+    setUltimoCobrado(vs[vs.length - 1]);
+    await load();
+  };
+
   const marcarEntregado = async (id: number) => {
     await fetch(`/api/ventas/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entregado: true }) });
     window.dispatchEvent(new CustomEvent('datos-actualizados'));
@@ -189,48 +233,114 @@ export default function VentasTab() {
   const porCobrar  = fiadosPendientes.filter(v => !v.fecha_cobro || (!isToday(parseISO(v.fecha_cobro)) && !isBefore(parseISO(v.fecha_cobro), hoyDate)));
 
   // ── Pedidos — 2 secciones ─────────────────────────────────────────────────
-  // Pendientes de entregar: todo lo que aún no está entregado (sin importar cobrado)
   const pedidosPendEntrega = pedidos.filter(p => !p.entregado);
-  // Entregados pero sin cobrar
   const pedidosEntregados  = pedidos.filter(p => !!p.entregado && !p.cobrado);
 
-  // ── Lista de ventas del período (excluye pedidos no cerrados) ─────────────
+  // ── Lista de ventas del período ───────────────────────────────────────────
   const ventasMostrar   = ventas.filter(v => v.tipo_pago !== 'entregar' || (!!v.entregado && !!v.cobrado));
   const totalPeriodo    = ventasMostrar.reduce((s, v) => s + v.total, 0);
   const gananciaPeriodo = ventasMostrar.reduce((s, v) => s + v.ganancia, 0);
 
-  // Helper: fila de fiado (función, no componente, para evitar remounts)
-  const renderFiadoFila = (
-    v: Venta,
-    opts: { colorText: string; colorSubtext: string; borderClass: string }
-  ) => (
-    <div key={v.id} className={`px-4 py-3 flex items-center gap-3 border-t ${opts.borderClass}`}>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium truncate ${opts.colorText}`}>{v.cliente || 'Sin nombre'}</p>
-        {v.fecha_cobro && (
-          <p className={`text-xs ${opts.colorSubtext}`}>
-            {isToday(parseISO(v.fecha_cobro))
-              ? 'Hoy'
-              : isBefore(parseISO(v.fecha_cobro), hoyDate)
-                ? `Venció el ${formatFechaCobro(v.fecha_cobro)}`
-                : `Cobrar el ${formatFechaCobro(v.fecha_cobro)}`}
-          </p>
-        )}
-        <p className={`text-xs truncate ${opts.colorSubtext}`}>
-          {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
-        </p>
-      </div>
-      <div className="flex flex-col items-end gap-1 shrink-0">
-        <p className={`text-sm font-bold ${opts.colorText}`}>{$(v.total)}</p>
-        <button
-          onClick={() => marcarCobrado(v.id)}
-          className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-        >
-          <CheckCircle2 size={11} /> Cobrado
-        </button>
-      </div>
-    </div>
-  );
+  // ── Render de sección de fiados agrupada ─────────────────────────────────
+  const renderSeccionFiados = (
+    fiados: Venta[],
+    sectionKey: string,
+    opts: { colorText: string; colorSubtext: string; divideClass: string; rowBg: string }
+  ) => {
+    const grupos = agruparPorCliente(fiados);
+    return grupos.map(grupo => {
+      const isMulti   = grupo.fiados.length > 1;
+      const grupoKey  = `${sectionKey}_${grupo.key}`;
+      const isOpen    = expandedGrupos.has(grupoKey);
+
+      return (
+        <div key={grupoKey} className={`border-t ${opts.divideClass}`}>
+          {/* Fila principal del grupo */}
+          <div className="px-4 py-3 flex items-start gap-3">
+            <div
+              className={`flex-1 min-w-0 ${isMulti ? 'cursor-pointer' : ''}`}
+              onClick={() => isMulti && toggleGrupo(grupoKey)}
+            >
+              <p className={`text-sm font-semibold ${opts.colorText}`}>
+                {grupo.cliente || 'Sin nombre'}
+                {isMulti && (
+                  <span className={`ml-2 text-xs font-normal ${opts.colorSubtext}`}>
+                    {grupo.fiados.length} compras
+                  </span>
+                )}
+              </p>
+              {!isMulti && (
+                <p className={`text-xs truncate ${opts.colorSubtext}`}>
+                  {grupo.fiados[0].items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                </p>
+              )}
+              {!isMulti && grupo.fiados[0].fecha_cobro && (
+                <p className={`text-xs ${opts.colorSubtext}`}>
+                  {etiquetaFecha(grupo.fiados[0].fecha_cobro, hoyDate)}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <p className={`text-sm font-bold ${opts.colorText}`}>{$(grupo.total)}</p>
+              {isMulti ? (
+                <>
+                  <button
+                    onClick={() => marcarCobradoTodos(grupo.fiados)}
+                    className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <CheckCircle2 size={11} /> Cobrar todo
+                  </button>
+                  <button
+                    onClick={() => toggleGrupo(grupoKey)}
+                    className={`text-xs ${opts.colorSubtext} hover:underline`}
+                  >
+                    {isOpen ? 'Ocultar ▲' : 'Ver detalle ▼'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => marcarCobrado(grupo.fiados[0].id)}
+                  className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                >
+                  <CheckCircle2 size={11} /> Cobrado
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Detalle expandido: cada compra individual */}
+          {isMulti && isOpen && (
+            <div className={`${opts.rowBg} divide-y ${opts.divideClass}`}>
+              {grupo.fiados.map(v => (
+                <div key={v.id} className="pl-8 pr-4 py-2.5 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs truncate ${opts.colorSubtext}`}>
+                      {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                    </p>
+                    {v.fecha_cobro && (
+                      <p className={`text-xs ${opts.colorSubtext} opacity-70`}>
+                        {etiquetaFecha(v.fecha_cobro, hoyDate)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <p className={`text-xs font-semibold ${opts.colorText}`}>{$(v.total)}</p>
+                    <button
+                      onClick={() => marcarCobrado(v.id)}
+                      className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                    >
+                      <CheckCircle2 size={11} /> Cobrar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
 
   if (loading) return <div className="flex items-center justify-center h-60 text-gray-400">Cargando...</div>;
 
@@ -258,7 +368,6 @@ export default function VentasTab() {
       {/* ── Pedidos activos ─────────────────────────────────────────────────── */}
       {(pedidosPendEntrega.length > 0 || pedidosEntregados.length > 0) && (
         <div className="rounded-2xl border border-orange-200 bg-orange-50 overflow-hidden">
-          {/* Cabecera */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-orange-100">
             <Package size={15} className="text-orange-500 shrink-0" />
             <p className="text-sm font-semibold text-orange-700 flex-1">Pedidos activos</p>
@@ -267,7 +376,6 @@ export default function VentasTab() {
             </span>
           </div>
 
-          {/* Sección 1: Pendientes de entregar */}
           {pedidosPendEntrega.length > 0 && (
             <>
               <div className="px-4 py-1.5 bg-orange-100/60">
@@ -319,7 +427,6 @@ export default function VentasTab() {
             </>
           )}
 
-          {/* Sección 2: Entregados — pendientes de pago */}
           {pedidosEntregados.length > 0 && (
             <>
               <div className={`px-4 py-1.5 bg-orange-100/60 ${pedidosPendEntrega.length > 0 ? 'border-t border-orange-200' : ''}`}>
@@ -374,9 +481,10 @@ export default function VentasTab() {
             </div>
             <span className="text-xs text-amber-400 shrink-0">{showFiados.hoy ? 'Ocultar ▲' : 'Ver ▼'}</span>
           </button>
-          {showFiados.hoy && vencenHoy.map(v =>
-            renderFiadoFila(v, { colorText: 'text-amber-800', colorSubtext: 'text-amber-500', borderClass: 'border-amber-100' })
-          )}
+          {showFiados.hoy && renderSeccionFiados(vencenHoy, 'hoy', {
+            colorText: 'text-amber-800', colorSubtext: 'text-amber-500',
+            divideClass: 'divide-amber-100 border-amber-100', rowBg: 'bg-amber-100/40',
+          })}
         </div>
       )}
 
@@ -398,9 +506,10 @@ export default function VentasTab() {
             </div>
             <span className="text-xs text-red-400 shrink-0">{showFiados.vencidos ? 'Ocultar ▲' : 'Ver ▼'}</span>
           </button>
-          {showFiados.vencidos && vencidos.map(v =>
-            renderFiadoFila(v, { colorText: 'text-red-800', colorSubtext: 'text-red-400', borderClass: 'border-red-100' })
-          )}
+          {showFiados.vencidos && renderSeccionFiados(vencidos, 'vencidos', {
+            colorText: 'text-red-800', colorSubtext: 'text-red-400',
+            divideClass: 'divide-red-100 border-red-100', rowBg: 'bg-red-100/40',
+          })}
         </div>
       )}
 
@@ -422,9 +531,10 @@ export default function VentasTab() {
             </div>
             <span className="text-xs text-gray-400 shrink-0">{showFiados.porCobrar ? 'Ocultar ▲' : 'Ver ▼'}</span>
           </button>
-          {showFiados.porCobrar && porCobrar.map(v =>
-            renderFiadoFila(v, { colorText: 'text-gray-700', colorSubtext: 'text-gray-400', borderClass: 'border-gray-100' })
-          )}
+          {showFiados.porCobrar && renderSeccionFiados(porCobrar, 'porCobrar', {
+            colorText: 'text-gray-700', colorSubtext: 'text-gray-400',
+            divideClass: 'divide-gray-100 border-gray-100', rowBg: 'bg-gray-100/60',
+          })}
         </div>
       )}
 
@@ -502,7 +612,6 @@ export default function VentasTab() {
                       <span className="text-gray-600">{$(v.total_costo)}</span>
                     </div>
 
-                    {/* Fiado info + botón cobrar */}
                     {!!v.fiado && !v.cobrado && (
                       <div className={`rounded-xl px-3 py-2.5 mt-1 flex items-center justify-between gap-3 ${esVencido ? 'bg-red-50' : 'bg-amber-50'}`}>
                         <div className="min-w-0">
@@ -579,7 +688,6 @@ export default function VentasTab() {
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300" />
             </div>
 
-            {/* Buscador */}
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">Agregar producto</label>
               <div className="relative" ref={busquedaRef}>
@@ -610,7 +718,6 @@ export default function VentasTab() {
               </div>
             </div>
 
-            {/* Ítems */}
             {items.length > 0 && (
               <div className="bg-gray-50 rounded-xl overflow-hidden">
                 {items.map((it, i) => (
@@ -642,13 +749,11 @@ export default function VentasTab() {
               </div>
             )}
 
-            {/* Cliente */}
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">Cliente (opcional)</label>
               <ClienteInput value={cliente} onChange={setCliente} placeholder="Buscar o nuevo cliente..." />
             </div>
 
-            {/* Fiado toggle */}
             <div className={`rounded-xl border p-3 space-y-3 transition-colors ${esFiado ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <div className="relative">
