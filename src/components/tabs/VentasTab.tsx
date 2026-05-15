@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock, Package, Truck } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock, Package, Truck, MessageCircle } from 'lucide-react';
 import ClienteInput from '@/components/ClienteInput';
 import GestionarClientesModal from '@/components/GestionarClientesModal';
 import { format, endOfMonth, isBefore, isToday, startOfDay, parseISO } from 'date-fns';
@@ -47,6 +47,28 @@ function mensajeAgradecimiento(v: { cliente: string }) {
     '',
     'Esperamos verle pronto!',
   ].join('\n');
+}
+
+function mensajeFiadoGrupo(grupo: GrupoFiado): string {
+  const saludo = grupo.cliente ? `Hola ${grupo.cliente}!` : 'Hola!';
+  const lineas: string[] = [saludo, ''];
+
+  if (grupo.fiados.length === 1) {
+    const v = grupo.fiados[0];
+    lineas.push('Le compartimos el detalle de su compra pendiente:', '');
+    v.items.forEach(it => lineas.push(`• ${it.cantidad}x ${it.nombre_producto}  $${(it.cantidad * it.precio_unitario).toFixed(2)}`));
+    lineas.push('', `Total pendiente: $${grupo.total.toFixed(2)}`);
+  } else {
+    lineas.push('Le compartimos el detalle de sus compras pendientes:', '');
+    grupo.fiados.forEach((v, i) => {
+      lineas.push(`Compra ${i + 1}:`);
+      v.items.forEach(it => lineas.push(`  • ${it.cantidad}x ${it.nombre_producto}  $${(it.cantidad * it.precio_unitario).toFixed(2)}`));
+      lineas.push(`  Subtotal: $${v.total.toFixed(2)}`, '');
+    });
+    lineas.push(`Total pendiente: $${grupo.total.toFixed(2)}`);
+  }
+
+  return lineas.join('\n');
 }
 
 /** Agrupa fiados por nombre de cliente. Los sin nombre van cada uno solo. */
@@ -204,11 +226,13 @@ export default function VentasTab() {
   };
 
   const marcarCobradoTodos = async (vs: Venta[]) => {
+    const cliente = vs[0]?.cliente || 'este cliente';
+    const total   = vs.reduce((s, v) => s + v.total, 0);
+    if (!confirm(`¿Marcar ${vs.length} compra${vs.length > 1 ? 's' : ''} de ${cliente} como cobradas?\nTotal: $${total.toFixed(2)}`)) return;
     await Promise.all(vs.map(v =>
       fetch(`/api/ventas/${v.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cobrado: true }) })
     ));
     window.dispatchEvent(new CustomEvent('datos-actualizados'));
-    // Toast con el último (representativo del cliente)
     setUltimoCobrado(vs[vs.length - 1]);
     await load();
   };
@@ -292,6 +316,12 @@ export default function VentasTab() {
                     <CheckCircle2 size={11} /> Cobrar todo
                   </button>
                   <button
+                    onClick={() => abrirWhatsApp(mensajeFiadoGrupo(grupo))}
+                    className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <MessageCircle size={11} /> Enviar orden
+                  </button>
+                  <button
                     onClick={() => toggleGrupo(grupoKey)}
                     className={`text-xs ${opts.colorSubtext} hover:underline`}
                   >
@@ -299,12 +329,20 @@ export default function VentasTab() {
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => marcarCobrado(grupo.fiados[0].id)}
-                  className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                >
-                  <CheckCircle2 size={11} /> Cobrado
-                </button>
+                <>
+                  <button
+                    onClick={() => marcarCobrado(grupo.fiados[0].id)}
+                    className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <CheckCircle2 size={11} /> Cobrado
+                  </button>
+                  <button
+                    onClick={() => abrirWhatsApp(mensajeFiadoGrupo(grupo))}
+                    className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <MessageCircle size={11} /> Enviar orden
+                  </button>
+                </>
               )}
             </div>
           </div>
