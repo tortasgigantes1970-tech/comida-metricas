@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock, Package } from 'lucide-react';
+import ClienteInput from '@/components/ClienteInput';
 import { format, endOfMonth, isPast, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import Modal from '@/components/Modal';
@@ -532,11 +533,7 @@ export default function VentasTab() {
             {/* Cliente */}
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">Cliente (opcional)</label>
-              <input
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                value={cliente} onChange={e => setCliente(e.target.value)}
-                placeholder="Ej. Juan García"
-              />
+              <ClienteInput value={cliente} onChange={setCliente} placeholder="Buscar o nuevo cliente..." />
             </div>
 
             {/* Fiado toggle */}
