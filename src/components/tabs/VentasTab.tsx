@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Plus, ChevronDown, ChevronUp, Trash2, ShoppingCart, Search, Pencil, AlertCircle, CheckCircle2, Clock, Package } from 'lucide-react';
 import ClienteInput from '@/components/ClienteInput';
+import GestionarClientesModal from '@/components/GestionarClientesModal';
 import { format, endOfMonth, isPast, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import Modal from '@/components/Modal';
@@ -70,8 +71,9 @@ export default function VentasTab() {
   const [pedidos, setPedidos]         = useState<Venta[]>([]);
   const [productos, setProductos]     = useState<Producto[]>([]);
   const [loading, setLoading]         = useState(true);
-  const [ultimoCobrado, setUltimoCobrado]     = useState<Venta | null>(null);
+  const [ultimoCobrado, setUltimoCobrado]         = useState<Venta | null>(null);
   const [showFiadosDetalle, setShowFiadosDetalle] = useState(false);
+  const [showGestClientes, setShowGestClientes]   = useState(false);
   const [modal, setModal]         = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expanded, setExpanded]   = useState<number | null>(null);
@@ -213,7 +215,15 @@ export default function VentasTab() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">Ventas</h1>
-          <p className="text-sm text-gray-400">{ventasMostrar.length} registros</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-gray-400">{ventasMostrar.length} registros</p>
+            <button
+              onClick={() => setShowGestClientes(true)}
+              className="text-xs text-orange-400 hover:text-orange-600 underline underline-offset-2 transition-colors"
+            >
+              Gestionar clientes
+            </button>
+          </div>
         </div>
         <button onClick={openModal} className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors">
           <Plus size={16} /> Nueva venta
@@ -435,6 +445,13 @@ export default function VentasTab() {
           })}
         </div>
       )}
+
+      {/* Modal gestionar clientes */}
+      <GestionarClientesModal
+        open={showGestClientes}
+        onClose={() => setShowGestClientes(false)}
+        onGuardado={() => { load(); window.dispatchEvent(new CustomEvent('datos-actualizados')); }}
+      />
 
       {/* Toast: agradecimiento post-cobro */}
       {ultimoCobrado && (
