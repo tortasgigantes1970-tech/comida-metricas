@@ -15,10 +15,11 @@ interface Venta {
   fiado: number; fecha_cobro: string | null; cobrado: number; cliente: string;
   tipo_pago: string; created_at: string; entregado: number;
 }
-
 interface FormItem { producto_id: number | null; nombre_producto: string; cantidad: number; precio_unitario: number; costo_unitario: number; }
-
 interface GrupoFiado { key: string; cliente: string; fiados: Venta[]; total: number; }
+
+// 0 = vencido (más urgente), 1 = hoy, 2 = por cobrar
+type NivelUrgencia = 0 | 1 | 2;
 
 const $ = (n: number) =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(n);
@@ -52,11 +53,7 @@ function mensajeAgradecimiento(v: { cliente: string }) {
 function mensajeFiadoGrupo(grupo: GrupoFiado): string {
   const saludo = grupo.cliente ? `Hola ${grupo.cliente}!` : 'Hola!';
   const lineas: string[] = [saludo, ''];
-
-  const fmtFecha = (fecha: string) => {
-    try { return format(parseISO(fecha), "d 'de' MMMM", { locale: es }); }
-    catch { return fecha; }
-  };
+  const fmtFecha = (f: string) => { try { return format(parseISO(f), "d 'de' MMMM", { locale: es }); } catch { return f; } };
 
   if (grupo.fiados.length === 1) {
     const v = grupo.fiados[0];
@@ -72,11 +69,9 @@ function mensajeFiadoGrupo(grupo: GrupoFiado): string {
     });
     lineas.push(`Total pendiente: $${grupo.total.toFixed(2)}`);
   }
-
   return lineas.join('\n');
 }
 
-/** Agrupa fiados por nombre de cliente. Los sin nombre van cada uno solo. */
 function agruparPorCliente(fiados: Venta[]): GrupoFiado[] {
   const map = new Map<string, Venta[]>();
   for (const v of fiados) {
@@ -92,13 +87,25 @@ function agruparPorCliente(fiados: Venta[]): GrupoFiado[] {
   }));
 }
 
-function etiquetaFecha(fecha_cobro: string | null, hoyDate: Date) {
-  if (!fecha_cobro) return null;
-  const d = parseISO(fecha_cobro);
-  if (isToday(d)) return 'Hoy';
-  if (isBefore(d, hoyDate)) return `Venció el ${formatFechaCobro(fecha_cobro)}`;
-  return `Cobrar el ${formatFechaCobro(fecha_cobro)}`;
+function urgenciaGrupo(grupo: GrupoFiado, hoyDate: Date): NivelUrgencia {
+  if (grupo.fiados.some(v => v.fecha_cobro && isBefore(parseISO(v.fecha_cobro), hoyDate))) return 0;
+  if (grupo.fiados.some(v => v.fecha_cobro && isToday(parseISO(v.fecha_cobro)))) return 1;
+  return 2;
 }
+
+function urgenciaFiado(v: Venta, hoyDate: Date): NivelUrgencia {
+  if (!v.fecha_cobro) return 2;
+  const d = parseISO(v.fecha_cobro);
+  if (isBefore(d, hoyDate)) return 0;
+  if (isToday(d)) return 1;
+  return 2;
+}
+
+const URGENCIA_STYLES: Record<NivelUrgencia, { border: string; bg: string; text: string; sub: string; badge: string }> = {
+  0: { border: 'border-l-red-400',   bg: 'bg-red-50/40',   text: 'text-red-800',   sub: 'text-red-400',   badge: '🔴' },
+  1: { border: 'border-l-amber-400', bg: 'bg-amber-50/40', text: 'text-amber-800', sub: 'text-amber-500', badge: '🟡' },
+  2: { border: 'border-l-gray-300',  bg: '',               text: 'text-gray-700',  sub: 'text-gray-400',  badge: '⚪' },
+};
 
 export default function VentasTab() {
   const [ventas, setVentas]       = useState<Venta[]>([]);
@@ -106,18 +113,15 @@ export default function VentasTab() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading]     = useState(true);
 
-  const [ultimoCobrado, setUltimoCobrado] = useState<Venta | null>(null);
-  const [showFiados, setShowFiados]       = useState<{ hoy: boolean; vencidos: boolean; porCobrar: boolean }>({ hoy: false, vencidos: false, porCobrar: false });
-  // Grupos de clientes expandidos dentro de cada sección de fiados
-  const [expandedGrupos, setExpandedGrupos] = useState<Set<string>>(new Set());
-  const [showGestClientes, setShowGestClientes] = useState(false);
+  const [ultimoCobrado, setUltimoCobrado]         = useState<Venta | null>(null);
+  const [showFiadosPanel, setShowFiadosPanel]     = useState(false);
+  const [expandedGrupos, setExpandedGrupos]       = useState<Set<string>>(new Set());
+  const [showGestClientes, setShowGestClientes]   = useState(false);
   const [modal, setModal]         = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expanded, setExpanded]   = useState<number | null>(null);
+  const [mes, setMes]             = useState(format(new Date(), 'yyyy-MM'));
 
-  const [mes, setMes] = useState(format(new Date(), 'yyyy-MM'));
-
-  // Form nueva/editar venta
   const [fecha, setFecha]           = useState(hoyStr());
   const [notas, setNotas]           = useState('');
   const [items, setItems]           = useState<FormItem[]>([]);
@@ -126,7 +130,6 @@ export default function VentasTab() {
   const [fechaCobro, setFechaCobro] = useState('');
   const [cliente, setCliente]       = useState('');
 
-  // Buscador
   const [busqueda, setBusqueda] = useState('');
   const [showSugg, setShowSugg] = useState(false);
   const busquedaRef             = useRef<HTMLDivElement>(null);
@@ -151,13 +154,11 @@ export default function VentasTab() {
   }, [mes]);
 
   useEffect(() => { load(); }, [load]);
-
   useEffect(() => {
     const handler = () => load();
     window.addEventListener('datos-actualizados', handler);
     return () => window.removeEventListener('datos-actualizados', handler);
   }, [load]);
-
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (busquedaRef.current && !busquedaRef.current.contains(e.target as Node)) setShowSugg(false);
@@ -167,11 +168,7 @@ export default function VentasTab() {
   }, []);
 
   const toggleGrupo = (key: string) =>
-    setExpandedGrupos(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
+    setExpandedGrupos(prev => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s; });
 
   const openModal = () => {
     setEditingId(null); setFecha(hoyStr()); setNotas(''); setItems([]);
@@ -191,11 +188,8 @@ export default function VentasTab() {
 
   const addItem = (p: Producto) => {
     const idx = items.findIndex(i => i.producto_id === p.id);
-    if (idx >= 0) {
-      setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: it.cantidad + 1 } : it));
-    } else {
-      setItems(prev => [...prev, { producto_id: p.id, nombre_producto: p.nombre, cantidad: 1, precio_unitario: p.precio_venta, costo_unitario: p.costo_produccion }]);
-    }
+    if (idx >= 0) setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: it.cantidad + 1 } : it));
+    else setItems(prev => [...prev, { producto_id: p.id, nombre_producto: p.nombre, cantidad: 1, precio_unitario: p.precio_venta, costo_unitario: p.costo_produccion }]);
     setBusqueda(''); setShowSugg(false);
   };
 
@@ -231,9 +225,9 @@ export default function VentasTab() {
   };
 
   const marcarCobradoTodos = async (vs: Venta[]) => {
-    const cliente = vs[0]?.cliente || 'este cliente';
-    const total   = vs.reduce((s, v) => s + v.total, 0);
-    if (!confirm(`¿Marcar ${vs.length} compra${vs.length > 1 ? 's' : ''} de ${cliente} como cobradas?\nTotal: $${total.toFixed(2)}`)) return;
+    const nombreCliente = vs[0]?.cliente || 'este cliente';
+    const total = vs.reduce((s, v) => s + v.total, 0);
+    if (!confirm(`¿Marcar ${vs.length} compra${vs.length > 1 ? 's' : ''} de ${nombreCliente} como cobradas?\nTotal: $${total.toFixed(2)}`)) return;
     await Promise.all(vs.map(v =>
       fetch(`/api/ventas/${v.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cobrado: true }) })
     ));
@@ -254,148 +248,25 @@ export default function VentasTab() {
     await load();
   };
 
-  // ── Fiados — 3 grupos ─────────────────────────────────────────────────────
-  const fiadosPendientes = ventas.filter(v => !!v.fiado && !v.cobrado);
-  const hoyDate          = startOfDay(new Date());
-  const vencenHoy  = fiadosPendientes.filter(v => v.fecha_cobro && isToday(parseISO(v.fecha_cobro)));
-  const vencidos   = fiadosPendientes.filter(v => v.fecha_cobro && isBefore(parseISO(v.fecha_cobro), hoyDate));
-  const porCobrar  = fiadosPendientes.filter(v => !v.fecha_cobro || (!isToday(parseISO(v.fecha_cobro)) && !isBefore(parseISO(v.fecha_cobro), hoyDate)));
+  // ── Fiados ────────────────────────────────────────────────────────────────
+  const fiadosPendientes     = ventas.filter(v => !!v.fiado && !v.cobrado);
+  const hoyDate              = startOfDay(new Date());
+  const totalFiadosPendientes = fiadosPendientes.reduce((s, v) => s + v.total, 0);
 
-  // ── Pedidos — 2 secciones ─────────────────────────────────────────────────
+  const gruposFiados = agruparPorCliente(fiadosPendientes)
+    .sort((a, b) => urgenciaGrupo(a, hoyDate) - urgenciaGrupo(b, hoyDate));
+
+  const countVencidos = fiadosPendientes.filter(v => v.fecha_cobro && isBefore(parseISO(v.fecha_cobro), hoyDate)).length;
+  const countHoy      = fiadosPendientes.filter(v => v.fecha_cobro && isToday(parseISO(v.fecha_cobro))).length;
+
+  // ── Pedidos ───────────────────────────────────────────────────────────────
   const pedidosPendEntrega = pedidos.filter(p => !p.entregado);
   const pedidosEntregados  = pedidos.filter(p => !!p.entregado && !p.cobrado);
 
-  // ── Lista de ventas del período ───────────────────────────────────────────
+  // ── Lista del período ─────────────────────────────────────────────────────
   const ventasMostrar   = ventas.filter(v => v.tipo_pago !== 'entregar' || (!!v.entregado && !!v.cobrado));
   const totalPeriodo    = ventasMostrar.reduce((s, v) => s + v.total, 0);
   const gananciaPeriodo = ventasMostrar.reduce((s, v) => s + v.ganancia, 0);
-
-  // ── Render de sección de fiados agrupada ─────────────────────────────────
-  const renderSeccionFiados = (
-    fiados: Venta[],
-    sectionKey: string,
-    opts: { colorText: string; colorSubtext: string; divideClass: string; rowBg: string }
-  ) => {
-    const grupos = agruparPorCliente(fiados);
-    return grupos.map(grupo => {
-      const isMulti   = grupo.fiados.length > 1;
-      const grupoKey  = `${sectionKey}_${grupo.key}`;
-      const isOpen    = expandedGrupos.has(grupoKey);
-
-      return (
-        <div key={grupoKey} className={`border-t ${opts.divideClass}`}>
-          {/* Fila principal del grupo */}
-          <div className="px-4 py-3 flex items-start gap-3">
-            <div
-              className={`flex-1 min-w-0 ${isMulti ? 'cursor-pointer' : ''}`}
-              onClick={() => isMulti && toggleGrupo(grupoKey)}
-            >
-              <p className={`text-sm font-semibold ${opts.colorText}`}>
-                {grupo.cliente || 'Sin nombre'}
-                {isMulti && (
-                  <span className={`ml-2 text-xs font-normal ${opts.colorSubtext}`}>
-                    {grupo.fiados.length} compras
-                  </span>
-                )}
-              </p>
-              {!isMulti && (
-                <>
-                  <p className={`text-xs truncate ${opts.colorSubtext}`}>
-                    {grupo.fiados[0].items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
-                  </p>
-                  <p className={`text-xs ${opts.colorSubtext} opacity-70`}>
-                    Pedido: {format(parseISO(grupo.fiados[0].fecha), "d 'de' MMMM", { locale: es })}
-                    {grupo.fiados[0].fecha_cobro ? ` · ${etiquetaFecha(grupo.fiados[0].fecha_cobro, hoyDate)}` : ''}
-                  </p>
-                </>
-              )}
-            </div>
-
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <p className={`text-sm font-bold ${opts.colorText}`}>{$(grupo.total)}</p>
-              {isMulti ? (
-                <>
-                  <button
-                    onClick={() => marcarCobradoTodos(grupo.fiados)}
-                    className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <CheckCircle2 size={11} /> Cobrar todo
-                  </button>
-                  <button
-                    onClick={() => abrirWhatsApp(mensajeFiadoGrupo(grupo))}
-                    className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <MessageCircle size={11} /> Enviar orden
-                  </button>
-                  <button
-                    onClick={() => toggleGrupo(grupoKey)}
-                    className={`text-xs ${opts.colorSubtext} hover:underline`}
-                  >
-                    {isOpen ? 'Ocultar ▲' : 'Ver detalle ▼'}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => marcarCobrado(grupo.fiados[0].id)}
-                    className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <CheckCircle2 size={11} /> Cobrado
-                  </button>
-                  <button
-                    onClick={() => abrirWhatsApp(mensajeFiadoGrupo(grupo))}
-                    className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <MessageCircle size={11} /> Enviar orden
-                  </button>
-                  <button
-                    onClick={() => openEdit(grupo.fiados[0])}
-                    className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <Pencil size={11} /> Editar
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Detalle expandido: cada compra individual */}
-          {isMulti && isOpen && (
-            <div className={`${opts.rowBg} divide-y ${opts.divideClass}`}>
-              {grupo.fiados.map(v => (
-                <div key={v.id} className="pl-8 pr-4 py-2.5 flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs truncate ${opts.colorSubtext}`}>
-                      {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
-                    </p>
-                    <p className={`text-xs ${opts.colorSubtext} opacity-70`}>
-                      {format(parseISO(v.fecha), "d 'de' MMMM", { locale: es })}
-                      {v.fecha_cobro ? ` · ${etiquetaFecha(v.fecha_cobro, hoyDate)}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <p className={`text-xs font-semibold ${opts.colorText}`}>{$(v.total)}</p>
-                    <button
-                      onClick={() => marcarCobrado(v.id)}
-                      className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                    >
-                      <CheckCircle2 size={11} /> Cobrar
-                    </button>
-                    <button
-                      onClick={() => openEdit(v)}
-                      className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
-                    >
-                      <Pencil size={11} /> Editar
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    });
-  };
 
   if (loading) return <div className="flex items-center justify-center h-60 text-gray-400">Cargando...</div>;
 
@@ -407,10 +278,8 @@ export default function VentasTab() {
           <h1 className="text-xl font-bold text-gray-800">Ventas</h1>
           <div className="flex items-center gap-3">
             <p className="text-sm text-gray-400">{ventasMostrar.length} registros</p>
-            <button
-              onClick={() => setShowGestClientes(true)}
-              className="text-xs text-orange-400 hover:text-orange-600 underline underline-offset-2 transition-colors"
-            >
+            <button onClick={() => setShowGestClientes(true)}
+              className="text-xs text-orange-400 hover:text-orange-600 underline underline-offset-2 transition-colors">
               Gestionar clientes
             </button>
           </div>
@@ -441,13 +310,10 @@ export default function VentasTab() {
                   <div key={p.id} className="px-4 py-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {p.cliente
-                          ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
+                        {p.cliente ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
                           : <span className="text-sm text-gray-400 italic">Sin nombre</span>}
                         <span className="text-xs text-gray-400">{formatHora(p.created_at)}</span>
-                        {!!p.cobrado && (
-                          <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-600">Pagado</span>
-                        )}
+                        {!!p.cobrado && <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-600">Pagado</span>}
                       </div>
                       <p className="text-xs text-gray-500 truncate mt-0.5">
                         {p.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
@@ -455,24 +321,18 @@ export default function VentasTab() {
                     </div>
                     <div className="flex flex-col items-end shrink-0 gap-1">
                       <p className="text-sm font-bold text-orange-500">{$(p.total)}</p>
-                      <button
-                        onClick={() => marcarEntregado(p.id)}
-                        className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 bg-white border border-orange-200 rounded-lg px-2 py-1 transition-colors"
-                      >
+                      <button onClick={() => marcarEntregado(p.id)}
+                        className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 bg-white border border-orange-200 rounded-lg px-2 py-1 transition-colors">
                         <Truck size={11} /> Entregado
                       </button>
                       {!p.cobrado && (
-                        <button
-                          onClick={() => marcarCobrado(p.id)}
-                          className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                        >
+                        <button onClick={() => marcarCobrado(p.id)}
+                          className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors">
                           <CheckCircle2 size={11} /> Cobrado
                         </button>
                       )}
-                      <button
-                        onClick={() => openEdit(p)}
-                        className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors"
-                      >
+                      <button onClick={() => openEdit(p)}
+                        className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors">
                         <Pencil size={11} /> Editar
                       </button>
                     </div>
@@ -492,8 +352,7 @@ export default function VentasTab() {
                   <div key={p.id} className="px-4 py-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {p.cliente
-                          ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
+                        {p.cliente ? <span className="text-sm font-medium text-gray-800">{p.cliente}</span>
                           : <span className="text-sm text-gray-400 italic">Sin nombre</span>}
                         <span className="text-xs text-gray-400">{formatHora(p.created_at)}</span>
                       </div>
@@ -503,10 +362,8 @@ export default function VentasTab() {
                     </div>
                     <div className="flex flex-col items-end shrink-0 gap-1">
                       <p className="text-sm font-bold text-orange-500">{$(p.total)}</p>
-                      <button
-                        onClick={() => marcarCobrado(p.id)}
-                        className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors"
-                      >
+                      <button onClick={() => marcarCobrado(p.id)}
+                        className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors">
                         <CheckCircle2 size={11} /> Cobrado
                       </button>
                     </div>
@@ -518,78 +375,155 @@ export default function VentasTab() {
         </div>
       )}
 
-      {/* ── Fiados: se cobran hoy (amber) ───────────────────────────────────── */}
-      {vencenHoy.length > 0 && (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 overflow-hidden">
+      {/* ── Fiados pendientes — bloque único ────────────────────────────────── */}
+      {fiadosPendientes.length > 0 && (
+        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+          {/* Cabecera del bloque */}
           <button
-            className="w-full px-4 py-3 flex items-center gap-3 text-left"
-            onClick={() => setShowFiados(s => ({ ...s, hoy: !s.hoy }))}
+            className="w-full px-4 py-3 flex items-center gap-3 text-left border-b border-gray-100"
+            onClick={() => setShowFiadosPanel(s => !s)}
           >
-            <AlertCircle size={18} className="text-amber-500 shrink-0" />
+            <AlertCircle size={16} className={countVencidos > 0 ? 'text-red-400 shrink-0' : 'text-amber-400 shrink-0'} />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-amber-700">
-                {vencenHoy.length} fiado{vencenHoy.length > 1 ? 's' : ''} se cobran hoy
-              </p>
-              <p className="text-xs text-amber-500 mt-0.5">
-                Total: {$(vencenHoy.reduce((s, v) => s + v.total, 0))}
-              </p>
+              <p className="text-sm font-semibold text-gray-800">Fiados pendientes</p>
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                {countVencidos > 0 && (
+                  <span className="text-xs text-red-500 font-medium">🔴 {countVencidos} vencido{countVencidos > 1 ? 's' : ''}</span>
+                )}
+                {countHoy > 0 && (
+                  <span className="text-xs text-amber-500 font-medium">🟡 {countHoy} hoy</span>
+                )}
+                <span className="text-xs text-gray-400">{$(totalFiadosPendientes)} total</span>
+              </div>
             </div>
-            <span className="text-xs text-amber-400 shrink-0">{showFiados.hoy ? 'Ocultar ▲' : 'Ver ▼'}</span>
+            <span className="text-xs text-gray-400 shrink-0">{showFiadosPanel ? 'Ocultar ▲' : 'Ver ▼'}</span>
           </button>
-          {showFiados.hoy && renderSeccionFiados(vencenHoy, 'hoy', {
-            colorText: 'text-amber-800', colorSubtext: 'text-amber-500',
-            divideClass: 'divide-amber-100 border-amber-100', rowBg: 'bg-amber-100/40',
-          })}
-        </div>
-      )}
 
-      {/* ── Fiados: vencidos (red) ──────────────────────────────────────────── */}
-      {vencidos.length > 0 && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 overflow-hidden">
-          <button
-            className="w-full px-4 py-3 flex items-center gap-3 text-left"
-            onClick={() => setShowFiados(s => ({ ...s, vencidos: !s.vencidos }))}
-          >
-            <AlertCircle size={18} className="text-red-500 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-red-700">
-                {vencidos.length} fiado{vencidos.length > 1 ? 's' : ''} vencido{vencidos.length > 1 ? 's' : ''}
-              </p>
-              <p className="text-xs text-red-500 mt-0.5">
-                Total: {$(vencidos.reduce((s, v) => s + v.total, 0))}
-              </p>
-            </div>
-            <span className="text-xs text-red-400 shrink-0">{showFiados.vencidos ? 'Ocultar ▲' : 'Ver ▼'}</span>
-          </button>
-          {showFiados.vencidos && renderSeccionFiados(vencidos, 'vencidos', {
-            colorText: 'text-red-800', colorSubtext: 'text-red-400',
-            divideClass: 'divide-red-100 border-red-100', rowBg: 'bg-red-100/40',
-          })}
-        </div>
-      )}
+          {/* Lista de clientes */}
+          {showFiadosPanel && (
+            <div className="divide-y divide-gray-100">
+              {gruposFiados.map(grupo => {
+                const nivel     = urgenciaGrupo(grupo, hoyDate);
+                const st        = URGENCIA_STYLES[nivel];
+                const isMulti   = grupo.fiados.length > 1;
+                const isOpen    = expandedGrupos.has(grupo.key);
 
-      {/* ── Fiados: por cobrar (gray) ───────────────────────────────────────── */}
-      {porCobrar.length > 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 overflow-hidden">
-          <button
-            className="w-full px-4 py-3 flex items-center gap-3 text-left"
-            onClick={() => setShowFiados(s => ({ ...s, porCobrar: !s.porCobrar }))}
-          >
-            <Clock size={18} className="text-gray-400 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-600">
-                {porCobrar.length} fiado{porCobrar.length > 1 ? 's' : ''} por cobrar
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Total: {$(porCobrar.reduce((s, v) => s + v.total, 0))}
-              </p>
+                // Resumen de badges para card colapsada de cliente multi-compra
+                const vCount = grupo.fiados.filter(v => urgenciaFiado(v, hoyDate) === 0).length;
+                const hCount = grupo.fiados.filter(v => urgenciaFiado(v, hoyDate) === 1).length;
+                const pCount = grupo.fiados.filter(v => urgenciaFiado(v, hoyDate) === 2).length;
+
+                return (
+                  <div key={grupo.key} className={`border-l-4 ${st.border} ${st.bg}`}>
+                    {/* Fila del cliente */}
+                    <div className="px-4 py-3 flex items-start gap-3">
+                      <div
+                        className={`flex-1 min-w-0 ${isMulti ? 'cursor-pointer' : ''}`}
+                        onClick={() => isMulti && toggleGrupo(grupo.key)}
+                      >
+                        <p className={`text-sm font-semibold ${st.text}`}>
+                          {grupo.cliente || 'Sin nombre'}
+                          {isMulti && <span className={`ml-2 text-xs font-normal ${st.sub}`}>{grupo.fiados.length} compras</span>}
+                        </p>
+                        {isMulti ? (
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {vCount > 0 && <span className="text-xs text-red-400">🔴 {vCount} vencido{vCount > 1 ? 's' : ''}</span>}
+                            {hCount > 0 && <span className="text-xs text-amber-500">🟡 {hCount} hoy</span>}
+                            {pCount > 0 && <span className={`text-xs ${st.sub}`}>⚪ {pCount} por cobrar</span>}
+                          </div>
+                        ) : (
+                          <>
+                            <p className={`text-xs truncate ${st.sub}`}>
+                              {grupo.fiados[0].items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                            </p>
+                            <p className={`text-xs ${st.sub} opacity-80`}>
+                              Pedido: {format(parseISO(grupo.fiados[0].fecha), "d 'de' MMMM", { locale: es })}
+                              {grupo.fiados[0].fecha_cobro
+                                ? ` · ${nivel === 0 ? `Venció el ${formatFechaCobro(grupo.fiados[0].fecha_cobro)}` : nivel === 1 ? 'Hoy' : `Cobrar el ${formatFechaCobro(grupo.fiados[0].fecha_cobro)}`}`
+                                : ''}
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <p className={`text-sm font-bold ${st.text}`}>{$(grupo.total)}</p>
+                        {isMulti ? (
+                          <>
+                            <button onClick={() => marcarCobradoTodos(grupo.fiados)}
+                              className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors">
+                              <CheckCircle2 size={11} /> Cobrar todo
+                            </button>
+                            <button onClick={() => abrirWhatsApp(mensajeFiadoGrupo(grupo))}
+                              className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors">
+                              <MessageCircle size={11} /> Enviar orden
+                            </button>
+                            <button onClick={() => toggleGrupo(grupo.key)}
+                              className={`text-xs ${st.sub} hover:underline`}>
+                              {isOpen ? 'Ocultar ▲' : 'Ver detalle ▼'}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => marcarCobrado(grupo.fiados[0].id)}
+                              className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors">
+                              <CheckCircle2 size={11} /> Cobrado
+                            </button>
+                            <button onClick={() => abrirWhatsApp(mensajeFiadoGrupo(grupo))}
+                              className="flex items-center gap-1 text-xs font-semibold text-green-600 hover:text-green-700 bg-white border border-green-200 rounded-lg px-2 py-1 transition-colors">
+                              <MessageCircle size={11} /> Enviar orden
+                            </button>
+                            <button onClick={() => openEdit(grupo.fiados[0])}
+                              className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors">
+                              <Pencil size={11} /> Editar
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Detalle expandido: compras individuales */}
+                    {isMulti && isOpen && (
+                      <div className="border-t border-gray-100 divide-y divide-gray-100">
+                        {grupo.fiados.map(v => {
+                          const urg = urgenciaFiado(v, hoyDate);
+                          const ust = URGENCIA_STYLES[urg];
+                          return (
+                            <div key={v.id} className="pl-8 pr-4 py-2.5 flex items-start gap-3 bg-white/60">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-gray-600 truncate">
+                                  {v.items.map(it => `${it.cantidad}× ${it.nombre_producto}`).join(', ')}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  {format(parseISO(v.fecha), "d 'de' MMMM", { locale: es })}
+                                  {v.fecha_cobro && (
+                                    <span className={`ml-1.5 font-medium ${ust.sub}`}>
+                                      {ust.badge} {urg === 0 ? `Venció el ${formatFechaCobro(v.fecha_cobro)}` : urg === 1 ? 'Hoy' : `Cobrar el ${formatFechaCobro(v.fecha_cobro)}`}
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <p className="text-xs font-semibold text-gray-700">{$(v.total)}</p>
+                                <button onClick={() => marcarCobrado(v.id)}
+                                  className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-white border border-emerald-200 rounded-lg px-2 py-1 transition-colors">
+                                  <CheckCircle2 size={11} /> Cobrar
+                                </button>
+                                <button onClick={() => openEdit(v)}
+                                  className="flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-600 bg-white border border-blue-200 rounded-lg px-2 py-1 transition-colors">
+                                  <Pencil size={11} /> Editar
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <span className="text-xs text-gray-400 shrink-0">{showFiados.porCobrar ? 'Ocultar ▲' : 'Ver ▼'}</span>
-          </button>
-          {showFiados.porCobrar && renderSeccionFiados(porCobrar, 'porCobrar', {
-            colorText: 'text-gray-700', colorSubtext: 'text-gray-400',
-            divideClass: 'divide-gray-100 border-gray-100', rowBg: 'bg-gray-100/60',
-          })}
+          )}
         </div>
       )}
 
@@ -666,7 +600,6 @@ export default function VentasTab() {
                       <span className="text-gray-500">Costo total</span>
                       <span className="text-gray-600">{$(v.total_costo)}</span>
                     </div>
-
                     {!!v.fiado && !v.cobrado && (
                       <div className={`rounded-xl px-3 py-2.5 mt-1 flex items-center justify-between gap-3 ${esVencido ? 'bg-red-50' : 'bg-amber-50'}`}>
                         <div className="min-w-0">
@@ -680,15 +613,12 @@ export default function VentasTab() {
                             </p>
                           )}
                         </div>
-                        <button
-                          onClick={() => marcarCobrado(v.id)}
-                          className="shrink-0 flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-                        >
+                        <button onClick={() => marcarCobrado(v.id)}
+                          className="shrink-0 flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
                           <CheckCircle2 size={13} /> Marcar cobrado
                         </button>
                       </div>
                     )}
-
                     <div className="flex justify-between items-center pt-1">
                       <button onClick={() => openEdit(v)} className="text-xs text-blue-400 hover:text-blue-600 flex items-center gap-1">
                         <Pencil size={13} /> Editar
@@ -717,19 +647,14 @@ export default function VentasTab() {
         <div className="fixed bottom-24 left-4 right-4 md:left-auto md:right-6 md:w-80 bg-emerald-600 text-white rounded-2xl p-4 shadow-xl z-50 flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm">✅ ¡Cobrado!</p>
-            {ultimoCobrado.cliente && (
-              <p className="text-xs text-emerald-200 truncate">{ultimoCobrado.cliente}</p>
-            )}
+            {ultimoCobrado.cliente && <p className="text-xs text-emerald-200 truncate">{ultimoCobrado.cliente}</p>}
           </div>
           <button
             onClick={() => { abrirWhatsApp(mensajeAgradecimiento(ultimoCobrado)); setUltimoCobrado(null); }}
-            className="shrink-0 bg-white text-emerald-700 font-semibold text-xs px-3 py-2 rounded-xl hover:bg-emerald-50 transition-colors"
-          >
+            className="shrink-0 bg-white text-emerald-700 font-semibold text-xs px-3 py-2 rounded-xl hover:bg-emerald-50 transition-colors">
             📲 Agradecer
           </button>
-          <button onClick={() => setUltimoCobrado(null)} className="shrink-0 text-emerald-200 hover:text-white text-lg leading-none">
-            ×
-          </button>
+          <button onClick={() => setUltimoCobrado(null)} className="shrink-0 text-emerald-200 hover:text-white text-lg leading-none">×</button>
         </div>
       )}
 
@@ -818,8 +743,7 @@ export default function VentasTab() {
                 </div>
                 <div>
                   <p className={`text-sm font-medium ${esFiado ? 'text-amber-700' : 'text-gray-700'}`}>
-                    <Clock size={13} className="inline mr-1" />
-                    Venta fiada (pago pendiente)
+                    <Clock size={13} className="inline mr-1" />Venta fiada (pago pendiente)
                   </p>
                   {!esFiado && <p className="text-xs text-gray-400">Activa si el pago se hará después</p>}
                 </div>
