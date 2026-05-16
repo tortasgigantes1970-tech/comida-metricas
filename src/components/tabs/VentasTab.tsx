@@ -53,15 +53,20 @@ function mensajeFiadoGrupo(grupo: GrupoFiado): string {
   const saludo = grupo.cliente ? `Hola ${grupo.cliente}!` : 'Hola!';
   const lineas: string[] = [saludo, ''];
 
+  const fmtFecha = (fecha: string) => {
+    try { return format(parseISO(fecha), "d 'de' MMMM", { locale: es }); }
+    catch { return fecha; }
+  };
+
   if (grupo.fiados.length === 1) {
     const v = grupo.fiados[0];
-    lineas.push('Le compartimos el detalle de su compra pendiente:', '');
+    lineas.push(`Le compartimos el detalle de su compra del ${fmtFecha(v.fecha)}:`, '');
     v.items.forEach(it => lineas.push(`• ${it.cantidad}x ${it.nombre_producto}  $${(it.cantidad * it.precio_unitario).toFixed(2)}`));
     lineas.push('', `Total pendiente: $${grupo.total.toFixed(2)}`);
   } else {
     lineas.push('Le compartimos el detalle de sus compras pendientes:', '');
     grupo.fiados.forEach((v, i) => {
-      lineas.push(`Compra ${i + 1}:`);
+      lineas.push(`Compra ${i + 1} — ${fmtFecha(v.fecha)}:`);
       v.items.forEach(it => lineas.push(`  • ${it.cantidad}x ${it.nombre_producto}  $${(it.cantidad * it.precio_unitario).toFixed(2)}`));
       lineas.push(`  Subtotal: $${v.total.toFixed(2)}`, '');
     });
