@@ -108,8 +108,9 @@ const URGENCIA_STYLES: Record<NivelUrgencia, { border: string; bg: string; text:
 };
 
 export default function VentasTab() {
-  const [ventas, setVentas]       = useState<Venta[]>([]);
-  const [pedidos, setPedidos]     = useState<Venta[]>([]);
+  const [ventas, setVentas]         = useState<Venta[]>([]);
+  const [pedidos, setPedidos]       = useState<Venta[]>([]);
+  const [fiadosPend, setFiadosPend] = useState<Venta[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading]     = useState(true);
 
@@ -142,14 +143,16 @@ export default function VentasTab() {
     setLoading(true);
     const desde = `${mes}-01`;
     const hasta = format(endOfMonth(new Date(`${mes}-01T12:00:00`)), 'yyyy-MM-dd');
-    const [rV, rP, rPedidos] = await Promise.all([
+    const [rV, rP, rPedidos, rFiados] = await Promise.all([
       fetch(`/api/ventas?desde=${desde}&hasta=${hasta}`).then(r => r.json()),
       fetch('/api/productos').then(r => r.json()),
       fetch('/api/ventas?pendientes=1').then(r => r.json()),
+      fetch('/api/ventas?fiados_pendientes=1').then(r => r.json()),
     ]);
     setVentas(rV as Venta[]);
     setProductos((rP as (Producto & { activo: number })[]).filter(p => p.activo));
     setPedidos(rPedidos as Venta[]);
+    setFiadosPend(rFiados as Venta[]);
     setLoading(false);
   }, [mes]);
 
@@ -248,8 +251,8 @@ export default function VentasTab() {
     await load();
   };
 
-  // ── Fiados ────────────────────────────────────────────────────────────────
-  const fiadosPendientes     = ventas.filter(v => !!v.fiado && !v.cobrado);
+  // ── Fiados (cargados independientemente del mes seleccionado) ────────────
+  const fiadosPendientes     = fiadosPend;
   const hoyDate              = startOfDay(new Date());
   const totalFiadosPendientes = fiadosPendientes.reduce((s, v) => s + v.total, 0);
 

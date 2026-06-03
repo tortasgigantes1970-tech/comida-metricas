@@ -17,9 +17,14 @@ export async function GET(req: NextRequest) {
                FROM ventas v`;
     const args: (string | number)[] = [];
 
+    const fiadosPendientes = searchParams.get('fiados_pendientes');
+
     if (pendientes === '1') {
       sql += ` WHERE (v.tipo_pago = 'entregar' AND NOT (v.entregado = 1 AND v.cobrado = 1))`;
       sql += ` ORDER BY v.created_at ASC`;
+    } else if (fiadosPendientes === '1') {
+      sql += ` WHERE v.fiado = 1 AND v.cobrado = 0`;
+      sql += ` ORDER BY v.fecha_cobro ASC, v.created_at ASC`;
     } else {
       if (desde && hasta) {
         sql += ` WHERE v.fecha BETWEEN ? AND ?`;
